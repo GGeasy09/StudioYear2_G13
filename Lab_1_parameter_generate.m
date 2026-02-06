@@ -9,10 +9,10 @@ motor_B = 3.90E-06;
 motor_Eff = 0.8279549717;
 motor_Ke = 6382.937317;
 motor_J = 0.05438258655;
-load('Lab1 Part2 Parameter\Stair_wait0.5.mat');
+load('Lab1 Part2 Parameter\Step_12V.mat');
+load('Lab1 Part2 Data\Lab1 Part2 Data Solve Error\lap1_step_v12_2000hz_1.mat')
 % Execute the simulation and store results
-results = sim('Lab1_parameter_estimation_student');
-save('Lab1 Part2 before_Analyse\lap1_step_v12_2000hz_2.mat');
+
 % 
 % motor_B = 8.86E-05;
 % motor_Eff = 0.60715;

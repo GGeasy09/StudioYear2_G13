@@ -1,27 +1,39 @@
 clear;
 fixed_step = 0.001;
-load('Lab1 Part2 Data\Lab1 Part2 Data\lap1_step_v12_2000hz_1.mat');
-load('Lab1 Part2 Parameter\Step_12V.mat');
+
+load('Lab1 Part2 Data\Lab1 Part2 Data\lap1_stair_v12_2000hz_time0.1_1.mat')
+load('Lab1 Part2 Parameter\Stair_wait0.1.mat')
+
 raw_data = speed;
 
-dval_raw = diff(raw_data);              % rate of change
-dval_Signal = diff(Sample_Signal);              % rate of change
-idx_raw = find(dval_raw > 0, 1, 'first');  % first point it rises
-idx_signal = find(dval_Signal > 0, 1, 'first');  % first point it rises
+% ---- Find when signals start to rise ----
+dval_raw = diff(raw_data);
+dval_Signal = diff(Sample_Signal);
+
+idx_raw = find(dval_raw > 0, 1, 'first');
+idx_signal = find(dval_Signal > 0, 1, 'first');
 
 raise_raw = time(idx_raw);
 raise_signal = time(idx_signal);
 
-diffsignal = raise_raw - raise_signal+fixed_step; 
+diffsignal = raise_raw - raise_signal + fixed_step;
 
+% ---- Shift time axis ----
+time_shift = time - diffsignal + fixed_step;
 
-time_shift = time - diffsignal+fixed_step;   % shift 0.5 s
-time_end = 10.3580;
+% ---- Delete data before t = 0 (your earlier request) ----
+idx = time_shift >= 0;      % keep only time ≥ 0
+time_shift = time_shift(idx);
+raw_data_shift = raw_data(idx); 
+time_end = time_shift(end);
+% ---- Plot ----
 figure;
 hold on;
-plot(time_shift, raw_data);
-plot(time, raw_data);
-plot(Sample_time, Sample_Signal);
+plot(time_shift, raw_data_shift);   % shifted & trimmed data
+plot(time, raw_data);               % original raw data
+plot(Sample_time, Sample_Signal);   % reference signal
+hold off;
+legend('Shifted Raw','Original Raw','Sample Signal');
 
-save('Lab1 Part2 Data\Lab1 Part2 Data Solve Error\lap1_step_v12_2000hz_1.mat', ...
-    "raw_data","time_shift","time_end");
+save('Lab1 Part2 Data\Lab1 Part2 Data Solve Error\lap1_step_v6_2000hz_3.mat', ...
+    "raw_data","raw_data_shift","time_shift","time_end","time");

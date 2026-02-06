@@ -1,0 +1,27 @@
+clear;
+fixed_step = 0.001;
+load('Lab1 Part2 Data\Lab1 Part2 Data\lap1_step_v12_2000hz_3.mat');
+load('Lab1 Part2 Parameter\Step_12V.mat');
+raw_data = speed;
+
+dval_raw = diff(raw_data);              % rate of change
+dval_Signal = diff(Sample_Signal);              % rate of change
+idx_raw = find(dval_raw > 0, 1, 'first');  % first point it rises
+idx_signal = find(dval_Signal > 0, 1, 'first');  % first point it rises
+
+raise_raw = time(idx_raw);
+raise_signal = time(idx_signal);
+
+diffsignal = raise_raw - raise_signal+fixed_step; 
+
+
+time_shift = time - diffsignal+fixed_step;   % shift 0.5 s
+time_end = time_shift();
+figure;
+hold on;
+plot(time_shift, raw_data);
+plot(time, raw_data);
+plot(Sample_time, Sample_Signal);
+
+% save('Lab1 Part2 Data\Lab1 Part2 Data Solve Error\lap1_step_v12_2000hz_3.mat', ...
+    % "raw_data","time_shift","time_end","time");
