@@ -1,5 +1,5 @@
 %% โหลดค่า Parameter
-load('Lab1 Part2 Parameter\')
+load('Lab1 Part2 Parameter\ramp_slope0.1.mat');
 
 sim('MotorXploer.slx');
 
@@ -18,6 +18,6 @@ ylabel('Angular Velocity (rad/s)');
 title('Motor Angular Velocity vs Time');
 grid on;
 hold off;
-filename = 'Lab1 Part2 Data\lap1_ramp' % Save ชื่อไฟล์
+filename = 'Lab1 Part2 Data\Lab1 Part2 Data New\lap1_ramp_slope0.1_1' % Save ชื่อไฟล์
 
 save(filename, "speed","time");
