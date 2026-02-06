@@ -1,0 +1,23 @@
+
+% R and L from experiment
+motor_R = 3.341;
+motor_L = 0.002587;
+
+% Optimization's parameters
+motor_B = 0.00058127;
+motor_Eff = 0.6063;
+motor_Ke = 146650;
+motor_J = 0.065192;
+
+%Mode Selection
+load('Lab1 Part2 Data\Lab1 Part2 Data'Lab1 Part2 Data\Lab1 Part2 Data\lap1_stair_v12_2000hz_time0.1_1.mat');
+speed_Estimate_1 = double(speed);
+time_1 = out.tout;
+load('Lab1 Part2 Data\Lab1 Part2 Data\lap1_chirmp_v12_2000hz_2pi_2.mat');
+speed_Estimate_2 = double(speed);
+time_2 = out.tout;
+load('Lab1 Part2 Data\Lab1 Part2 Data\lap1_chirmp_v12_2000hz_2pi_3.mat');
+speed_Estimate_3 = double(speed);
+time_3 = out.tout;
+
+
