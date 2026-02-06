@@ -1,23 +1,16 @@
+clear;
 %% โหลดค่า Parameter
-load('Lab1 Part2 Parameter\')
+filename = 'Lab1 Part2 Parameter\ramp_slope0.05.mat'
+load(filename)
 
-sim('MotorXploer.slx');
-
-out = sim('MotorXploer.slx');
-
-speed = out.Angular_Velocity.signals.values;
-time = out.tout;
-signal = out.Input_Signal_Real_Motor.signals.values;
-
-figure;
-hold on;
-plot(time, speed);
-plot(time, signal);
+sim("C:\Users\ACER\Documents\GitHub\StudioYear2_G13\Lab1_parameter_estimation_student.slx");
+    Sample_Signal = ans.Input_Signal.signals.values;
+    Sample_time = ans.tout;
+      figure;
+      plot(Sample_time, Sample_Signal);
 xlabel('Time (s)');
-ylabel('Angular Velocity (rad/s)');
-title('Motor Angular Velocity vs Time');
+ylabel('Signal Amplitude');
+title(filename);
 grid on;
-hold off;
-filename = 'Lab1 Part2 Data\lap1_ramp' % Save ชื่อไฟล์
 
-save(filename, "speed","time");
+save(filename)

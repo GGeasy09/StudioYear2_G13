@@ -5,6 +5,7 @@ files = dir(fullfile(folderPath, '*.mat'));
 for i = 1:length(files)
     filename = fullfile(folderPath, files(i).name);
     load(filename);
+    disp(filename);
     sim("C:\Users\ACER\Documents\GitHub\StudioYear2_G13\Lab1_parameter_estimation_student.slx");
     Sample_Signal = ans.Input_Signal.signals.values;
     Sample_time = ans.tout;
