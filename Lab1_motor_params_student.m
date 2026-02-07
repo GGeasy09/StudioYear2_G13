@@ -11,7 +11,7 @@ motor_Ke = 0.05438258655;
 motor_J = 1/6382.937317;
 
 load('Lab1 Part2 Parameter\Step_12V.mat');
-
+folderPath
 %Mode Selection
 load('Lab1 Part2 Data\Lab1 Part2 Data Solve Error\lap1_step_v12_2000hz_1.mat');
 speed_Estimate_1 = double(raw_data_shift);

@@ -3,17 +3,19 @@ clear;
 % --- Parameters to vary (Rows of our table) ---
 % Each row is [B, eff, J, ke]
 params = [
-    1.27E-04,0.50531929,0.02999525596,3.44E-06; % Params Set 1
-    5.13E-05,0.9978452448,0.05486926168,1.66E-05; % Params Set 2
-  6.46E-05,0.9979388922,5.40E-02,1.57E-05  % Params Set 3
+    7.16E-05,0.7060438393,0.007087134184,4.99E-07; % Params Set 1
+    7.19E-05,0.7106010735,0.007033650283,4.61E-07; % Params Set 2
+   6.79E-05,0.7366726199,0.006335253656,2.45E-07  % Params Set 3
 ];
+
+
 
 % --- Validation Files (Columns of our table) ---
 % {Validation_Data, Input_Setup_Parameters}
 Validation_Para = {
-   'Lab1 Part2 Data\Lab1 Part2 Data Solve Error\lap1_stair_v12_2000hz_time0.5_1.mat', 'Lab1 Part2 Parameter\Stair_wait0.5.mat';
-   'Lab1 Part2 Data\Lab1 Part2 Data Solve Error\lap1_stair_v12_2000hz_time0.5_2.mat', 'Lab1 Part2 Parameter\Stair_wait0.5.mat';
-   'Lab1 Part2 Data\Lab1 Part2 Data Solve Error\lap1_stair_v12_2000hz_time0.5_3.mat', 'Lab1 Part2 Parameter\Stair_wait0.5.mat'    
+   'Lab1 Part2 Data\Lab1 Part2 Data Solve Error\lap1_stair_12V_2000hz_time0.1_1', 'Lab1 Part2 Parameter\Stair_wait0.1.mat';
+   'Lab1 Part2 Data\Lab1 Part2 Data Solve Error\lap1_stair_12V_2000hz_time0.1_2', 'Lab1 Part2 Parameter\Stair_wait0.1.mat';
+   'Lab1 Part2 Data\Lab1 Part2 Data Solve Error\lap1_stair_12V_2000hz_time0.1_3', 'Lab1 Part2 Parameter\Stair_wait0.1.mat'    
 };
 
 modelName = 'Lab1_parameter_estimation_student';
