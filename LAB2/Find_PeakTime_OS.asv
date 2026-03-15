@@ -1,0 +1,7 @@
+clear;
+run("Lab2_params_student.m");
+
+Initial_point = 0;
+Setpoint = 0;
+
+ou

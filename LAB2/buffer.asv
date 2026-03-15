@@ -1,0 +1,26 @@
+clear;
+% 1. Define the data from the image
+true_temperatures = [50.005, 49.994, 49.993, 50.001, 50.006, ...
+                     49.998, 50.021, 50.005, 50, 49.997];
+
+measurements = [49.986, 49.963, 50.09, 50.001, 50.018, ...
+                50.05, 49.938, 49.858, 49.965, 50.114];
+
+% 2. Create time vector (5-second intervals)
+time_seconds = (1:length(true_temperatures));
+
+% 3. Combine into a matrix and convert to a table
+% Each row represents a variable
+data_matrix = [time_seconds; true_temperatures; measurements];
+
+% Create column names: Step_0, Step_5, Step_10, etc.
+col_names = arrayfun(@(x) sprintf('I', x), time_seconds, 'UniformOutput', false);
+
+% Create the table with RowNames
+RowTable = array2table(data_matrix, ...
+    'VariableNames', col_names, ...
+    'RowNames', {'Iteration', 'True_Temp_C', 'Measurement_C'});
+
+% Display the table
+disp('--- Temperature Data (Row Table Format) ---');
+disp(RowTable);
