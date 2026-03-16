@@ -11,7 +11,7 @@ R = 3.18;
 b = 7.7581E-05;
 J = 5.8559E-05;
 Jarm = mp*L*L+J;
-J_sum = J;
+J_sum = J+Jarm;
 A = J_sum*Lm;
 B = J_sum*R+b*Lm;
 C = R*b+ke*kt;
@@ -20,7 +20,7 @@ T = 0.0001; %Tua Constant For Feed Forward
 Setpoint = 0;
 Initial_point = 0;
 num = kt;
-den = [ (Jarm*Lm), (Jarm*R + b*Lm), (b*R + kt*ke),0];
+den = [ (Jsum*Lm), (Jsum*R + b*Lm), (b*R + kt*ke),0];
 
 sys_tf = tf(num, den);
 
