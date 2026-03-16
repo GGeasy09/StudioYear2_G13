@@ -23,4 +23,5 @@ den = [ (Jarm*Lm), (Jarm*R + b*Lm), (b*R + kt*ke),0];
 
 sys_tf = tf(num, den);
 
+feed_forward = 1;
 
