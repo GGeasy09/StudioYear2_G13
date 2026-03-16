@@ -2,8 +2,8 @@ clear;
 run("Lab2_params_student.m");
 
 % --- Input Parameters ---
-zeta = 0.5912;      % Damping Ratio
-wn = 1.2978;         % Natural Frequency (rad/s)
+zeta = 0.6901;      % Damping Ratio
+wn = 1.9321;         % Natural Frequency (rad/s)
 
 % --- 1. S-Plane Calculations ---
 sigma = zeta * wn;                   % Real part (decay constant)
@@ -33,4 +33,4 @@ s_point = -0.9191 + 1.2532j; % Replace with your actual point
 G_val = evalfr(sys_tf, s_point); % Evaluates the TF at that frequency
 K = 1 / abs(G_val)
 angle_deg = angle(G_val) * 180/pi
-controlSystemDesigner("rlocus",sys_tf);
+% controlSystemDesigner("rlocus",sys_tf);

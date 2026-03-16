@@ -1,6 +1,9 @@
 clear;
 run("Lab2_params_student.m");
-
+%initial - setpoint
+% 0 - 90
+% 90 - 90
+% 90 - 0
 Initial_point = 0; % Target in degrees
 Setpoint = 90;      
 kp_value = 0.0788;

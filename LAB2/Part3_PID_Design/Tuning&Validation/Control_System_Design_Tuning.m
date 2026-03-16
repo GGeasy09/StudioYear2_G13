@@ -1,9 +1,9 @@
 clear;
-run("C:\Users\ACER\Documents\GitHub\StudioYear2_G13\LAB2\Parameter_Pendilum_[don't_Edit]\Lab2_params_student.m");
+run("Lab2_params_student.m");
 
 % --- Input Parameters ---
 zeta = 0.5912;      % Damping Ratio
-wn = 1.2978;         % Natural Frequency (rad/s)
+wn = 2.2555;         % Natural Frequency (rad/s)
 
 % --- 1. S-Plane Calculations ---
 sigma = zeta * wn;                   % Real part (decay constant)

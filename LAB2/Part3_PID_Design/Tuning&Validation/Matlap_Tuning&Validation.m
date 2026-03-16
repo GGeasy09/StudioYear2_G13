@@ -3,12 +3,15 @@ clear;
 run("C:\Users\ACER\Documents\GitHub\StudioYear2_G13\LAB2\Parameter_Pendilum_[don't_Edit]\Lab2_params_student.m");
 
 %% Input Variable Section (Vectorized)
-kp_vector = [0.05]; % Define the values you want to test
 Initial_point = 0; %ใส่ค่าจุดเริ่ม
 Setpoint = 90; %ใส่ค่าจุดสุดท้าย
 rad2deg = 180/pi;
-simfile = "C:\Users\ACER\Documents\GitHub\StudioYear2_G13\LAB2\Part2_Gravity_Compensation\Matlap_Kp_Tuning";
+simfile = "C:\Users\ACER\Documents\GitHub\StudioYear2_G13\LAB2\Part3_PID_Design\Tuning&Validation\Tuning_Validation.slx";
 
+%block
+kp_value = 0;
+ki_value = 0;
+kd_value = 0;
 
 % Pre-allocate cell arrays to store results
 results_pos = cell(length(kp_vector), 1);
