@@ -19,11 +19,14 @@ fprintf('Damping Ratio (zeta): %.4f\n', zeta);
 fprintf('Natural Frequency (Wn): %.4f rad/s\n', Wn);
 
 % The given pole
-s = -0.7674 + 1.2984j;
+s = -1.6 + 1.68j;
 
 % The characteristic equation is: A*s^3 + B*s^2 + C*s + kp*km = 0
 % Solving for kp:
 kp = -(A*s^3 + B*s^2 + C*s) / kt;
+disp(['Full Complex kp: ', num2str(kp)])
+disp(['Magnitude (Usable Gain): ', num2str(abs(kp))])
+disp(['Phase Angle (should be near 0 or 180 deg): ', num2str(angle(kp)*180/pi)])
 
 % Display result
 % Note: kp should ideally be a real number. If there is a tiny 

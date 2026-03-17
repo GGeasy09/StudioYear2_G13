@@ -1,0 +1,75 @@
+%% Basic Setup
+clear; clc;
+run("C:\Users\ACER\Documents\GitHub\StudioYear2_G13\LAB2\Parameter_Pendilum_[don't_Edit]\Lab2_params_student.m");
+
+%% Input Variable Section (Vectorized)
+%block
+kp_value = 0.75813;
+ki_value = 0;
+kd_value = 0.62;
+
+
+%% Input Variable Section
+Initial_point = 0; 
+Setpoint = 90; 
+rad2deg = 180/pi;
+simfile = "C:\Users\ACER\Documents\GitHub\StudioYear2_G13\LAB2\Part3_PID_Design\Tuning&Validation\Validation.slx";
+
+% Define your methods here (e.g., 1 = P, 2 = PI, 3 = PID)
+Control_Method = [1, 2, 3]; 
+
+% Pre-allocate based on the number of methods
+num_methods = length(Control_Method);
+results_pos = cell(num_methods, 1);
+results_time = cell(num_methods, 1);
+peak_times = zeros(num_methods, 1);
+overshoots = zeros(num_methods, 1);
+legend_labels = cell(num_methods, 1);
+
+%% --- Simulation Loop ---
+for i = 1:num_methods
+    % Update the Control_Method variable for Simulink
+    Controller_Method = Control_Method(i); 
+    
+    % Run Simulation
+    simout = sim(simfile);
+    
+    % Extract Data
+    data_signal = simout.Position_Data.Data * rad2deg;
+    time_signal = simout.Position_Data.Time;
+    
+    % Store for plotting
+    results_pos{i} = data_signal;
+    results_time{i} = time_signal;
+    
+    % --- Calculate Metrics ---
+    [max_val, max_idx] = max(data_signal);
+    peak_times(i) = time_signal(max_idx);
+    
+    % Percentage Overshoot 
+    os_calc = ((max_val - Setpoint) / abs(Setpoint - Initial_point)) * 100;
+    overshoots(i) = max(0, os_calc); 
+    
+    % Create Legend Label
+    legend_labels{i} = sprintf('Method %d', Controller_Method);
+end
+
+%% --- Display Results Table ---
+fprintf('\n--- Comparison of Control Methods ---\n');
+ResultsTable = table(Control_Method', peak_times, overshoots, ...
+    'VariableNames', {'Method_ID', 'PeakTime_s', 'PercentOvershoot'});
+disp(ResultsTable);
+
+%% --- Figure: Combined Comparison ---
+figure('Name', 'Control Method Comparison', 'Color', 'w');
+hold on;
+for i = 1:num_methods
+    plot(results_time{i}, results_pos{i}, 'LineWidth', 1.5);
+end
+
+yline(Setpoint, 'k:', 'Setpoint', 'LineWidth', 1.2);
+xlabel('Time (s)');
+ylabel('Position (Degrees)');
+title('System Response: Comparison of Different Control Methods');
+legend(legend_labels, 'Location', 'southeast');
+grid on;

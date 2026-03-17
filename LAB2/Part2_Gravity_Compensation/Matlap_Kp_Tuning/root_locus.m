@@ -30,7 +30,8 @@ fprintf('Peak Time: %.2f sec\n', Tp)
 fprintf('Rise Time: %.2f sec\n', Tr)
 
 s_point = -0.9191 + 1.2532j; % Replace with your actual point
-G_val = evalfr(sys_tf, s_point); % Evaluates the TF at that frequency
-K = 1 / abs(G_val)
+tf = s_point*s_point*(A*s_point^2+B*s_point+C)/(kt*(s+2.612));
+
+
 angle_deg = angle(G_val) * 180/pi
 controlSystemDesigner("rlocus",sys_tf);

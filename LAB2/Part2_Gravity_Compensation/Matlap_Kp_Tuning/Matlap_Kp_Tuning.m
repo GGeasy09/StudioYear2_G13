@@ -3,11 +3,11 @@ clear;
 run("C:\Users\ACER\Documents\GitHub\StudioYear2_G13\LAB2\Parameter_Pendilum_[don't_Edit]\Lab2_params_student.m");
 
 %% Input Variable Section (Vectorized)
-kp_vector = [0.05]; % Define the values you want to test
-Initial_point = 0; %ใส่ค่าจุดเริ่ม
-Setpoint = 90; %ใส่ค่าจุดสุดท้าย
+kp_value = 0.05; % Define the values you want to test
+Initial_point = 90; %ใส่ค่าจุดเริ่ม
+Setpoint = 0; %ใส่ค่าจุดสุดท้าย
 rad2deg = 180/pi;
-simfile = "C:\Users\ACER\Documents\GitHub\StudioYear2_G13\LAB2\Part2_Gravity_Compensation\Matlap_Kp_Tuning";
+simfile = "C:\Users\ACER\Documents\GitHub\StudioYear2_G13\LAB2\Part2_Gravity_Compensation\Matlap_Kp_Tuning\Kp_Tuning.slx";
 
 
 % Pre-allocate cell arrays to store results
@@ -20,8 +20,6 @@ legend_labels = cell(length(kp_vector), 1);
 peak_times = zeros(length(kp_vector), 1);
 overshoots = zeros(length(kp_vector), 1);
 
-for i = 1:length(kp_vector)
-    kp_value = kp_vector(i); 
     simout = sim(simfile);
     
     % Extract data
