@@ -2,67 +2,58 @@
 clear;
 run("C:\Users\ACER\Documents\GitHub\StudioYear2_G13\LAB2\Parameter_Pendilum_[don't_Edit]\Lab2_params_student.m");
 
-%% Input Variable Section (Vectorized)
-kp_value = 0.05; % Define the values you want to test
-Initial_point = 90; %ใส่ค่าจุดเริ่ม
-Setpoint = 0; %ใส่ค่าจุดสุดท้าย
+%% Input Variable Section (Single Run)
+kp_value = 0.05; % Define the single value you want to test
+Initial_point = 90; % ใส่ค่าจุดเริ่ม
+Setpoint = 0; % ใส่ค่าจุดสุดท้าย
 rad2deg = 180/pi;
 simfile = "C:\Users\ACER\Documents\GitHub\StudioYear2_G13\LAB2\Part2_Gravity_Compensation\Matlap_Kp_Tuning\Kp_Tuning.slx";
 
+% Ensure Simulink sees the kp_value by pushing it to the base workspace
+assignin('base', 'kp_value', kp_value);
 
-% Pre-allocate cell arrays to store results
-results_pos = cell(length(kp_vector), 1);
-results_time = cell(length(kp_vector), 1);
-legend_labels = cell(length(kp_vector), 1);
+%% --- Simulation Run ---
+simout = sim(simfile);
+    
+% Extract data
+data_signal = simout.Position_Data.Data * rad2deg;
+time_signal = simout.Position_Data.Time;
 
-%% --- Simulation Loop with Metrics ---
-% Pre-allocate arrays for metrics
-peak_times = zeros(length(kp_vector), 1);
-overshoots = zeros(length(kp_vector), 1);
-
-    simout = sim(simfile);
-    
-    % Extract data
-    data_signal = simout.Position_Data.Data * rad2deg;
-    time_signal = simout.Position_Data.Time;
-    
-    % Store for plotting
-    results_pos{i} = data_signal;
-    results_time{i} = time_signal;
-    
-    % --- Calculate Metrics ---
-    % 1. Find Maximum Value and its index
-    [max_val, max_idx] = max(data_signal);
-    
-    % 2. Peak Time (time at which max value occurs)
-    peak_times(i) = time_signal(max_idx);
-    
-    % 3. Percentage Overshoot 
-    % Formula: ((PeakValue - FinalValue) / (FinalValue - InitialValue)) * 100
-    overshoots(i) = ((max_val - Setpoint) / abs(Setpoint - Initial_point)) * 100;
-    
-    % Ensure overshoot isn't negative (in case it never reaches setpoint)
-    if overshoots(i) < 0, overshoots(i) = 0; end
-    
-    legend_labels{i} = sprintf('k_p = %.4f', kp_value);
+%% --- Calculate Metrics (Adaptive for Up/Down Step) ---
+if Setpoint > Initial_point
+    % Rising Step: Peak is the maximum value
+    [peak_val, peak_idx] = max(data_signal);
+    % Percent Overshoot formula for rising
+    overshoot = ((peak_val - Setpoint) / abs(Setpoint - Initial_point)) * 100;
+else
+    % Falling Step: Peak is the minimum value
+    [peak_val, peak_idx] = min(data_signal);
+    % Percent Overshoot formula for falling (Setpoint - MinValue)
+    overshoot = ((Setpoint - peak_val) / abs(Setpoint - Initial_point)) * 100;
 end
 
+% Common Metrics
+peak_time = time_signal(peak_idx);
+
+% Ensure overshoot isn't negative (in case it never crosses setpoint)
+if overshoot < 0
+    overshoot = 0; 
+end
+
+legend_label = sprintf('k_p = %.4f', kp_value);
+
 %% --- Display Results Table ---
-ResultsTable = table(kp_vector', peak_times, overshoots, ...
+ResultsTable = table(kp_value, peak_time, overshoot, ...
     'VariableNames', {'Kp_Value', 'PeakTime_s', 'PercentOvershoot'});
 disp(ResultsTable);
 
-%% --- Figure: Combined Position Comparison ---
-figure('Name', 'Multi-Run Position Comparison');
+%% --- Figure: Position Plot ---
+figure('Name', 'Single-Run Position');
+plot(time_signal, data_signal, 'LineWidth', 1.5);
 hold on;
-
-for i = 1:length(kp_vector)
-    plot(results_time{i}, results_pos{i}, 'LineWidth', 1.5);
-end
-
 yline(Setpoint, 'k:', 'Setpoint', 'LineWidth', 1.2);
 xlabel('Time (s)');
 ylabel('Position (Degrees)');
-title('System Response for Multiple k_p Values');
-legend(legend_labels);
+title(sprintf('System Response for k_p = %.4f', kp_value));
+legend(legend_label, 'Setpoint');
 grid on;
