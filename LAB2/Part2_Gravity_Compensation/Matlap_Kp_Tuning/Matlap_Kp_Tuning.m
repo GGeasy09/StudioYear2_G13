@@ -2,58 +2,66 @@
 clear;
 run("C:\Users\ACER\Documents\GitHub\StudioYear2_G13\LAB2\Parameter_Pendilum_[don't_Edit]\Lab2_params_student.m");
 
-%% Input Variable Section (Single Run)
-kp_value = 0.05; % Define the single value you want to test
-Initial_point = 90; % ใส่ค่าจุดเริ่ม
-Setpoint = 0; % ใส่ค่าจุดสุดท้าย
+%% Input Variable Section
+kp_value = 0.056427; 
+% Trajectory [Initial_point, Setpoint]
+Trajectory_Path = [0,90; 0,180; 0,270; 90,0; 180,0; 270,0];
 rad2deg = 180/pi;
 simfile = "C:\Users\ACER\Documents\GitHub\StudioYear2_G13\LAB2\Part2_Gravity_Compensation\Matlap_Kp_Tuning\Kp_Tuning.slx";
 
-% Ensure Simulink sees the kp_value by pushing it to the base workspace
-assignin('base', 'kp_value', kp_value);
+% Pre-allocate a table or structure to store multiple results
+AllResults = table();
+figure('Name', 'Trajectory Comparisons'); hold on;
 
-%% --- Simulation Run ---
-simout = sim(simfile);
+%% --- Loop Through Trajectory Rows ---
+for i = 1:size(Trajectory_Path, 1)
+    % 1. Extract current Initial and Setpoint
+    Initial_point = Trajectory_Path(i, 1);
+    Setpoint = Trajectory_Path(i, 2);
     
-% Extract data
-data_signal = simout.Position_Data.Data * rad2deg;
-time_signal = simout.Position_Data.Time;
-
-%% --- Calculate Metrics (Adaptive for Up/Down Step) ---
-if Setpoint > Initial_point
-    % Rising Step: Peak is the maximum value
-    [peak_val, peak_idx] = max(data_signal);
-    % Percent Overshoot formula for rising
-    overshoot = ((peak_val - Setpoint) / abs(Setpoint - Initial_point)) * 100;
-else
-    % Falling Step: Peak is the minimum value
-    [peak_val, peak_idx] = min(data_signal);
-    % Percent Overshoot formula for falling (Setpoint - MinValue)
-    overshoot = ((Setpoint - peak_val) / abs(Setpoint - Initial_point)) * 100;
+    % 2. Push variables to base workspace for Simulink
+    assignin('base', 'kp_value', kp_value);
+    assignin('base', 'Initial_point', Initial_point);
+    assignin('base', 'Setpoint', Setpoint);
+    
+    % 3. Run Simulation
+    simout = sim(simfile);
+    
+    % 4. Extract data
+    data_signal = simout.Position_Data.Data * rad2deg;
+    time_signal = simout.Position_Data.Time;
+    
+    % 5. Calculate Metrics (Adaptive)
+    if Setpoint > Initial_point
+        [peak_val, peak_idx] = max(data_signal);
+        overshoot = ((peak_val - Setpoint) / abs(Setpoint - Initial_point)) * 100;
+    elseif Setpoint < Initial_point
+        [peak_val, peak_idx] = min(data_signal);
+        overshoot = ((Setpoint - peak_val) / abs(Setpoint - Initial_point)) * 100;
+    else
+        overshoot = 0; % No movement
+        peak_idx = 1;
+    end
+    
+    peak_time = time_signal(peak_idx);
+    overshoot = max(0, overshoot); % Ensure non-negative
+    
+    % 6. Store results in Table
+    CurrentRow = table(Initial_point, Setpoint, peak_time, overshoot, ...
+        'VariableNames', {'Initial', 'Setpoint', 'PeakTime_s', 'PercentOvershoot'});
+    AllResults = [AllResults; CurrentRow];
+    
+    % 7. Plot this specific run
+    plot(time_signal, data_signal, 'DisplayName', sprintf('%d to %d', Initial_point, Setpoint));
 end
 
-% Common Metrics
-peak_time = time_signal(peak_idx);
-
-% Ensure overshoot isn't negative (in case it never crosses setpoint)
-if overshoot < 0
-    overshoot = 0; 
-end
-
-legend_label = sprintf('k_p = %.4f', kp_value);
-
-%% --- Display Results Table ---
-ResultsTable = table(kp_value, peak_time, overshoot, ...
-    'VariableNames', {'Kp_Value', 'PeakTime_s', 'PercentOvershoot'});
-disp(ResultsTable);
-
-%% --- Figure: Position Plot ---
-figure('Name', 'Single-Run Position');
-plot(time_signal, data_signal, 'LineWidth', 1.5);
-hold on;
-yline(Setpoint, 'k:', 'Setpoint', 'LineWidth', 1.2);
+%% --- Final Formatting ---
+yline(0, 'k--'); % Baseline if needed
 xlabel('Time (s)');
 ylabel('Position (Degrees)');
-title(sprintf('System Response for k_p = %.4f', kp_value));
-legend(legend_label, 'Setpoint');
+title(sprintf('Trajectory Responses (k_p = %.4f)', kp_value));
+legend('Location', 'best');
 grid on;
+
+disp('--- Final Results ---');
+disp(AllResults);

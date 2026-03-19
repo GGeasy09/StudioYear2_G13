@@ -1,17 +1,17 @@
 clear;
-run("Lab2_params_student.m");
+run("C:\Users\ACER\Documents\GitHub\StudioYear2_G13\LAB2\Parameter_Pendilum_[don't_Edit]\Lab2_params_student.m");
 %initial - setpoint
 % 0 - 90
 % 90 - 90
 % 90 - 0
-Initial_point = 0; % Target in degrees
-Setpoint = 90;      
-kp_value = 0.0788;
+Initial_point = 90; % Target in degrees
+Setpoint = 0;   
+kp_value = 0.06235;
 rad2deg = 180/pi; % Conversion constant
 
 %% --- Run 1: Feed-Forward ON ---
 feed_forward = 1;
-simout1 = sim("Simulink_Hand_PID_Tuning.slx");
+simout1 = sim("Compare_Gravity_Compensaiton.slx");
 % Convert data to degrees immediately
 pos1_deg = simout1.Position_Data.Data * rad2deg;
 vel1_deg = simout1.Velocity_Data.Data * rad2deg;
@@ -19,7 +19,7 @@ time1 = simout1.Position_Data.Time;
 
 %% --- Run 2: Feed-Forward OFF ---
 feed_forward = 0;
-simout2 = sim("Simulink_Hand_PID_Tuning.slx");
+simout2 = sim("Compare_Gravity_Compensaiton.slx");
 % Convert data to degrees immediately
 pos2_deg = simout2.Position_Data.Data * rad2deg;
 vel2_deg = simout2.Velocity_Data.Data * rad2deg;

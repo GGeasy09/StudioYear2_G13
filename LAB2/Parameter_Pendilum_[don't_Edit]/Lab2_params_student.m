@@ -15,7 +15,7 @@ J_sum = J+Jarm;
 A = J_sum*Lm;
 B = J_sum*R+b*Lm;
 C = R*b+ke*kt;
-T = 0.0005; %Tua Constant For Feed Forward
+T = 0.0001; %Tua Constant For Feed Forward
 
 Setpoint = 0;
 Initial_point = 0;

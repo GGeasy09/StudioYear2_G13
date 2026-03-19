@@ -1,0 +1,129 @@
+%% Basic Setup
+clear; clc;
+% Load your base parameters
+run("C:\Users\ACER\Documents\GitHub\StudioYear2_G13\LAB2\Parameter_Pendilum_[don't_Edit]\Lab2_params_student.m");
+
+%% Input Variable Section
+kp_value = 0.4626;
+ki_value = 0.004608;
+kd_value = 0.18;
+rad2deg = 180/pi;
+Setpoint = 180;
+Initial_point = 0;
+T_Kd_Filter = 0.001;
+
+% For parsim, just use the model name (make sure your current folder is set correctly in MATLAB)
+simfile = 'Noise.slx'; 
+load_system("Noise.slx");
+
+% Define your methods here 
+% Control Method%3 = 1 is Discreate Model
+% Control Method%3 = 2 is Continuos Model
+% Control Method%3 = 0 is Constant Block Model
+% Method 1-3 with lowpass Filter cut-off 1000HZ
+% Method 4-6 without Filter
+Control_Method = [1,2,3,4,5,6,7,8,9]; 
+Noise_Power = 0.00001;
+Noise_Frequencys = [0.01,0.001,0.0001];
+%% Pre-allocation
+num_methods = length(Control_Method);
+results_pos = cell(num_methods, 1);
+results_time = cell(num_methods, 1);
+peak_times = zeros(num_methods, 1);
+overshoots = zeros(num_methods, 1);
+legend_labels = cell(num_methods, 1);
+rise_times = zeros(num_methods, 1);
+settling_times = zeros(num_methods, 1);
+
+% NEW: Pre-allocate for control effort
+results_effort = cell(num_methods, 1); 
+
+%% --- Simulation Loop ---
+for i = 1:num_methods
+    % Update the Control_Method variable for Simulink
+    Controller_Method = Control_Method(i); 
+    
+    % Run Simulation
+    simout = sim(simfile);
+    
+    % Extract Data
+    data_signal = simout.Position_Data.Data * rad2deg;
+    time_signal = simout.Position_Data.Time;
+    
+    % NEW: Extract control effort data (assuming it's formatted like Position_Data)
+    effort_signal = simout.control_effort.Data; 
+    
+    % Store for plotting
+    results_pos{i} = data_signal;
+    results_time{i} = time_signal;
+    results_effort{i} = effort_signal; % NEW: Store the effort data
+    
+    % --- Calculate Metrics ---
+    [max_val, max_idx] = max(data_signal);
+    peak_times(i) = time_signal(max_idx);
+    
+    % Percentage Overshoot 
+    os_calc = ((max_val - Setpoint) / abs(Setpoint - Initial_point)) * 100;
+    overshoots(i) = max(0, os_calc); 
+    
+    % --- Calculate Additional Metrics ---
+    
+    % 1. Rise Time (10% to 90%)
+    t10_idx = find(data_signal >= 0.1 * Setpoint, 1);
+    t90_idx = find(data_signal >= 0.9 * Setpoint, 1);
+    if ~isempty(t10_idx) && ~isempty(t90_idx)
+        rise_times(i) = time_signal(t90_idx) - time_signal(t10_idx);
+    else
+        rise_times(i) = NaN; % If it never reaches 90%
+    end
+    
+    % 2. Settling Time (2% Criterion)
+    error = abs(data_signal - Setpoint);
+    tolerance = 0.02 * abs(Setpoint - Initial_point);
+    last_outside_idx = find(error > tolerance, 1, 'last');
+    
+    if isempty(last_outside_idx)
+        settling_times(i) = 0; 
+    elseif last_outside_idx == length(time_signal)
+        settling_times(i) = NaN; % System hasn't settled yet
+    else
+        settling_times(i) = time_signal(last_outside_idx + 1);
+    end
+    
+    % Create Legend Label
+    legend_labels{i} = sprintf('Method %d', Controller_Method);
+end
+
+%% --- Display Results Table ---
+ResultsTable = table(Control_Method', peak_times, overshoots, rise_times, settling_times, ...
+    'VariableNames', {'Method_ID', 'PeakTime_s', 'PercentOvershoot', 'RiseTime_s', 'SettlingTime_2pct'});
+disp(ResultsTable);
+
+%% --- Figure 1: Combined Position Comparison ---
+figure('Name', 'Control Method Comparison', 'Color', 'w');
+hold on;
+for i = 1:num_methods
+    plot(results_time{i}, results_pos{i}, 'LineWidth', 1.5);
+end
+yline(Setpoint, 'k:', 'Setpoint', 'LineWidth', 1.2);
+xlabel('Time (s)');
+ylabel('Position (Degrees)');
+title('System Response: Comparison of Different Control Methods');
+legend(legend_labels, 'Location', 'southeast');
+grid on;
+
+%% --- Figure 2: Control Effort Comparison ---
+figure('Name', 'Control Effort Comparison', 'Color', 'w');
+hold on;
+for i = 1:num_methods
+    plot(results_time{i}, results_effort{i}, 'LineWidth', 1.5);
+end
+% Adding lines to show your actuator saturation limits
+yline(12, 'r--', 'Max Voltage (+12V)', 'LineWidth', 1.2, 'LabelHorizontalAlignment', 'left');
+yline(-12, 'r--', 'Min Voltage (-12V)', 'LineWidth', 1.2, 'LabelHorizontalAlignment', 'left');
+
+xlabel('Time (s)');
+ylabel('Control Effort (Volts)');
+title('Controller Effort vs. Time');
+legend(legend_labels, 'Location', 'northeast');
+grid on;

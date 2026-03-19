@@ -31,5 +31,5 @@ fprintf('Rise Time: %.2f sec\n', Tr)
 
 s_point = -1.6 + 1.68j; % Replace with your actual point
 
-angle_deg = angle(G_val) * 180/pi
+% angle_deg = angle(G_val) * 180/pi
 controlSystemDesigner("rlocus",sys_tf);

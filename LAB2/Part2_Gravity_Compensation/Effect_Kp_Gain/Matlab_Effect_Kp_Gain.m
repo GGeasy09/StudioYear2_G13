@@ -3,9 +3,9 @@ clear;
 run("C:\Users\ACER\Documents\GitHub\StudioYear2_G13\LAB2\Parameter_Pendilum_[don't_Edit]\Lab2_params_student.m");
 
 %% Input Variable Section (Vectorized)
-kp_vector = [0.05, 0.0788, 0.12]; % Define the values you want to test
+kp_vector = [0.04, 0.06, 0.08]; % Define the values you want to test
 Initial_point = 0; %ใส่ค่าจุดเริ่ม
-Setpoint = 90; %ใส่ค่าจุดสุดท้าย
+Setpoint = 360; %ใส่ค่าจุดสุดท้าย
 rad2deg = 180/pi;
 simfile = "Effect_Kp_Gain.slx";
 
@@ -19,51 +19,60 @@ legend_labels = cell(length(kp_vector), 1);
 peak_times = zeros(length(kp_vector), 1);
 overshoots = zeros(length(kp_vector), 1);
 
+%% --- Simulation Loop with Metrics ---
+% ... (keep your pre-allocation code) ...
+
+%% --- Updated Simulation Loop with Settling Time ---
+results_ts = zeros(length(kp_vector), 1); % Pre-allocate
+
 for i = 1:length(kp_vector)
     kp_value = kp_vector(i); 
     simout = sim(simfile);
     
-    % Extract data
     data_signal = simout.Position_Data.Data * rad2deg;
     time_signal = simout.Position_Data.Time;
     
-    % Store for plotting
     results_pos{i} = data_signal;
     results_time{i} = time_signal;
     
-    % --- Calculate Metrics ---
-    % 1. Find Maximum Value and its index
+    % --- Peak Time and Overshoot ---
     [max_val, max_idx] = max(data_signal);
-    
-    % 2. Peak Time (time at which max value occurs)
     peak_times(i) = time_signal(max_idx);
-    
-    % 3. Percentage Overshoot 
-    % Formula: ((PeakValue - FinalValue) / (FinalValue - InitialValue)) * 100
     overshoots(i) = ((max_val - Setpoint) / abs(Setpoint - Initial_point)) * 100;
-    
-    % Ensure overshoot isn't negative (in case it never reaches setpoint)
     if overshoots(i) < 0, overshoots(i) = 0; end
+    
+    % --- Settling Time (2% Threshold) ---
+    threshold = 0.02 * abs(Setpoint - Initial_point);
+    idx_outside = find(abs(data_signal - Setpoint) > threshold);
+    if isempty(idx_outside)
+        results_ts(i) = 0;
+    elseif idx_outside(end) == length(data_signal)
+        results_ts(i) = NaN; % Didn't settle within simulation time
+    else
+        results_ts(i) = time_signal(idx_outside(end));
+    end
     
     legend_labels{i} = sprintf('k_p = %.4f', kp_value);
 end
 
-%% --- Display Results Table ---
-ResultsTable = table(kp_vector', peak_times, overshoots, ...
-    'VariableNames', {'Kp_Value', 'PeakTime_s', 'PercentOvershoot'});
-disp(ResultsTable);
-
-%% --- Figure: Combined Position Comparison ---
-figure('Name', 'Multi-Run Position Comparison');
-hold on;
-
+%% --- Figure Update: Adding Ts to Labels ---
+figure('Name', 'Multi-Run Position Comparison'); hold on;
+colors = lines(length(kp_vector));
 for i = 1:length(kp_vector)
-    plot(results_time{i}, results_pos{i}, 'LineWidth', 1.5);
+    plot(results_time{i}, results_pos{i}, 'LineWidth', 1.5, 'Color', colors(i,:));
+    
+    [peak_val, idx] = max(results_pos{i});
+    peak_x = results_time{i}(idx);
+    
+    % Updated label string with Ts
+    label_str = sprintf('  Kp: %.3f\n  OS: %.1f%%\n  Tp: %.2fs\n  Ts: %.2fs', ...
+                kp_vector(i), overshoots(i), peak_times(i), results_ts(i));
+    
+    text(peak_x, peak_val, label_str, 'Color', colors(i,:), ...
+         'VerticalAlignment', 'bottom', 'FontSize', 8, 'FontWeight', 'bold');
 end
-
-yline(Setpoint, 'k:', 'Setpoint', 'LineWidth', 1.2);
-xlabel('Time (s)');
-ylabel('Position (Degrees)');
-title('System Response for Multiple k_p Values');
-legend(legend_labels);
-grid on;
+% --- Your Original Title Restored ---
+title_str = sprintf('System Response for Multiple k_p Values (From %d to %d Degrees)', ...
+            Initial_point, Setpoint);
+title(title_str);yline(Setpoint, 'k:', 'Setpoint');
+grid on; xlabel('Time (s)'); ylabel('Position (Deg)');
