@@ -5,8 +5,8 @@ run("C:\Users\ACER\Documents\GitHub\StudioYear2_G13\LAB2\Parameter_Pendilum_[don
 
 %% Input Variable Section
 kp_value = 0.4626;
-ki_values = [0.0008,0.002,0.004608,0.01,0.04];
-kd_value = 0.18; % This will be our inner loop
+ki_values = 0.004608;
+kd_value = [0.008,0.08,0.18,0.28,0.68]; % This will be our inner loop
 rad2deg = 180/pi;
 Setpoint = 180;
 Initial_point = 0;

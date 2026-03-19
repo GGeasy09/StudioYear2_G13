@@ -21,7 +21,6 @@ Setpoint = 0;
 Initial_point = 0;
 num = kt;
 den = [ (J_sum*Lm), (J_sum*R + b*Lm), (b*R + kt*ke),0];
-
 sys_tf = tf(num, den);
 
 

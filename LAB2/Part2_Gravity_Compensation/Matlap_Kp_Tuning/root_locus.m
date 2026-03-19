@@ -34,4 +34,8 @@ tf = s_point*s_point*(A*s_point^2+B*s_point+C)/(kt*(s+2.612));
 
 
 angle_deg = angle(G_val) * 180/pi
+
+num = kt;
+den = [ (J_sum*Lm), (J_sum*R + b*Lm), (b*R + kt*ke),0];
+sys_tf = tf(num, den);
 controlSystemDesigner("rlocus",sys_tf);

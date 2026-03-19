@@ -5,7 +5,7 @@ run("C:\Users\ACER\Documents\GitHub\StudioYear2_G13\LAB2\Parameter_Pendilum_[don
 
 % 1. Inputs
 Design_Point = -1.6 + 1.68j;
-SetofPole = [0,-1116.5,-1.1]; % <--- Add your actual poles here
+    SetofPole = [0,0,-1116.5,-1.1]; % <--- Add your actual poles here
 
 % 2. Calculate Required Zero (Angle Condition)
 pole_angles = atan2d(imag(Design_Point) - imag(SetofPole), ...

@@ -32,4 +32,14 @@ fprintf('Rise Time: %.2f sec\n', Tr)
 s_point = -1.6 + 1.68j; % Replace with your actual point
 
 % angle_deg = angle(G_val) * 180/pi
-controlSystemDesigner("rlocus",sys_tf);
+% controlSystemDesigner("rlocus",sys_tf);
+
+% Inputs
+sigma_d = 1.6;          % Real part of design point
+omega_d = 1.68;         % Imaginary part of design point
+theta_z = 58.7403;        % Calculated required angle
+
+% Zero Placement Calculation
+z_pi = sigma_d - (omega_d / tand(theta_z));
+
+fprintf('The calculated zero position (z_pi) is: %.4f\n', z_pi);
