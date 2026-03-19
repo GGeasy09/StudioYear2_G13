@@ -2,7 +2,7 @@
 clear; clc;
 run("Lab2_params_student.m");
 % 1. Input known parameters
-OS = 10;
+OS = 5;
 tp = 3;
 
 % 2. Calculate damping ratio (zeta)

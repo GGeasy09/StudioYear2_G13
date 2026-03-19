@@ -1,0 +1,38 @@
+% Calculate Natural Frequency (Wn) from Settling Time and %OS
+clear; clc;
+run("C:\Users\ACER\Documents\GitHub\StudioYear2_G13\LAB2\Parameter_Pendilum_[don't_Edit]\Lab2_params_student.m");
+
+%% 1. Input known parameters
+OS = 5;           % Percentage Overshoot
+ts = 2.5;           % Settling Time (seconds) - 2% criterion
+
+%% 2. Calculate damping ratio (zeta)
+L = log(OS/100);
+zeta = -L / sqrt(pi^2 + L^2);
+
+%% 3. Calculate natural frequency (Wn)
+% Derived from: ts = 4 / (zeta * Wn)
+Wn = 4 / (ts * zeta);
+
+%% 4. Results
+fprintf('\n--- Results ---\n');
+fprintf('Damping Ratio (zeta): %.4f\n', zeta);
+fprintf('Natural Frequency (Wn): %.4f rad/s\n', Wn);
+
+%% 5. Calculate kp from the Pole
+% The given pole (typically s = -zeta*Wn + j*Wn*sqrt(1-zeta^2))
+% Based on your previous pole:
+% s = - + 1.2984j; 
+
+% The characteristic equation: A*s^3 + B*s^2 + C*s + kp*kt = 0
+% Solving for kp:
+
+% s2 = -0.8226 + 1.122j;
+% kp_3 = s_point*s_point*(A*s_point^2+B*s_point+C)/(kt*(s+2.612));
+
+% fprintf('The calculated kp is: %.4f\n', real(kp));
+
+% Verification
+% if abs(imag(kp)) > 1e-3
+%     warning('The result has a significant imaginary part (%.4fi).', imag(kp));
+% end
