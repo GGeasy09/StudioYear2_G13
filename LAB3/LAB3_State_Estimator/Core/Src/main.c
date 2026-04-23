@@ -135,9 +135,9 @@ int main(void)
 	KALMAN_1D_Init(&Pos_cost_data[0], 0.001f, 0.75f); //target process measure
 	KALMAN_1D_Init(&Pos_cost_data[1], 0.01f, 0.75f); //target process measure
 	KALMAN_1D_Init(&Pos_cost_data[2], 0.1f, 0.75f); //target process measure
-	KALMAN_Multi_Velocity_Init(&Velo_cost_data[0], 750000.0f, 0.75f);
-	KALMAN_Multi_Velocity_Init(&Velo_cost_data[1], 750000.0f, 0.75f);
-	KALMAN_Multi_Velocity_Init(&Velo_cost_data[2], 750000.0f, 0.75f);
+	KALMAN_Multi_Velocity_Init(&Velo_cost_data[0], 1000000.0f, 0.75f);
+	KALMAN_Multi_Velocity_Init(&Velo_cost_data[1], 1100000.0f, 0.75f);
+	KALMAN_Multi_Velocity_Init(&Velo_cost_data[2], 1200000.0f, 0.75f);
   /* USER CODE END 2 */
 
   /* Infinite loop */
