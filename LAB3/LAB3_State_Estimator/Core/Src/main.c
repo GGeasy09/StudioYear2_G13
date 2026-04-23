@@ -18,6 +18,10 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "dma.h"
+#include "usart.h"
+#include "tim.h"
+#include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -29,7 +33,7 @@
 Ultrasonic TIM_Data = { 0 };
 KALMAN_1D_Params Pos_cost_data[3] = { 0 };
 KALMAN_Multi_Velocity_Params Velo_cost_data[3] = { 0 };
-
+KALMAN_Multi_Model_Params Model_data[3] = { 0 };
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -44,36 +48,25 @@ KALMAN_Multi_Velocity_Params Velo_cost_data[3] = { 0 };
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-UART_HandleTypeDef hlpuart1;
-DMA_HandleTypeDef hdma_lpuart1_tx;
-DMA_HandleTypeDef hdma_lpuart1_rx;
-
-TIM_HandleTypeDef htim1;
-TIM_HandleTypeDef htim2;
-TIM_HandleTypeDef htim3;
-TIM_HandleTypeDef htim4;
 
 /* USER CODE BEGIN PV */
 char msg_buffer[50];
 int32_t buffer;
 volatile uint8_t tx_ready_flag = 1;
-uint8_t TxBuffer[50];
-uint8_t RxBuffer[10];
+uint8_t TxBuffer[100];
+uint8_t RxBuffer[50];
 uint8_t DMAstate;
 int32_t Normalvalue;
-float32_t data[3];
+float32_t data_pos[3];
+float32_t data_velo[3];
+
+float32_t Model_buffer[4];
+
 volatile int Mode;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-static void MX_GPIO_Init(void);
-static void MX_DMA_Init(void);
-static void MX_TIM2_Init(void);
-static void MX_TIM3_Init(void);
-static void MX_TIM1_Init(void);
-static void MX_LPUART1_UART_Init(void);
-static void MX_TIM4_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -124,7 +117,7 @@ int main(void)
 	HAL_TIM_Base_Start_IT(&htim3);
 	HAL_TIM_Base_Start_IT(&htim4);
 	HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
-	HAL_UART_Receive_DMA(&hlpuart1, RxBuffer, 3);
+	HAL_UART_Receive_DMA(&hlpuart1, RxBuffer, 35);
 
 	TIM_Data.state = 1;
 	buffer = 100;
@@ -132,12 +125,15 @@ int main(void)
 	Normalvalue = 100;
 	Mode = 0;
 
-	KALMAN_1D_Init(&Pos_cost_data[0], 0.001f, 0.75f); //target process measure
-	KALMAN_1D_Init(&Pos_cost_data[1], 0.01f, 0.75f); //target process measure
-	KALMAN_1D_Init(&Pos_cost_data[2], 0.1f, 0.75f); //target process measure
-	KALMAN_Multi_Velocity_Init(&Velo_cost_data[0], 750000.0f, 0.75f);
-	KALMAN_Multi_Velocity_Init(&Velo_cost_data[1], 750000.0f, 0.75f);
-	KALMAN_Multi_Velocity_Init(&Velo_cost_data[2], 750000.0f, 0.75f);
+	KALMAN_1D_Init(&Pos_cost_data[0], 0.001f, 0.0075f); //target process measure
+	KALMAN_1D_Init(&Pos_cost_data[1], 0.01f, 0.0075f); //target process measure
+	KALMAN_1D_Init(&Pos_cost_data[2], 0.1f, 0.0075f); //target process measure
+	KALMAN_Multi_Velocity_Init(&Velo_cost_data[0], 750000.0f, 0.0075f);
+	KALMAN_Multi_Velocity_Init(&Velo_cost_data[1], 750000.0f, 0.0075f);
+	KALMAN_Multi_Velocity_Init(&Velo_cost_data[2], 750000.0f, 0.0075f);
+  KALMAN_Multi_Model_Init(&Model_data[0], 750000.0f, 0.75f, 29.415f, 0.04f, 14.05f, 0.115f);
+  KALMAN_Multi_Model_Init(&Model_data[1], 750000.0f, 0.75f, 29.415f, 0.04f, 14.05f, 0.115f);
+  KALMAN_Multi_Model_Init(&Model_data[2], 750000.0f, 0.75f, 29.415f, 0.04f, 14.05f, 0.115f);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -197,311 +193,6 @@ void SystemClock_Config(void)
   }
 }
 
-/**
-  * @brief LPUART1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_LPUART1_UART_Init(void)
-{
-
-  /* USER CODE BEGIN LPUART1_Init 0 */
-
-  /* USER CODE END LPUART1_Init 0 */
-
-  /* USER CODE BEGIN LPUART1_Init 1 */
-
-  /* USER CODE END LPUART1_Init 1 */
-  hlpuart1.Instance = LPUART1;
-  hlpuart1.Init.BaudRate = 5000000;
-  hlpuart1.Init.WordLength = UART_WORDLENGTH_8B;
-  hlpuart1.Init.StopBits = UART_STOPBITS_1;
-  hlpuart1.Init.Parity = UART_PARITY_NONE;
-  hlpuart1.Init.Mode = UART_MODE_TX_RX;
-  hlpuart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  hlpuart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  hlpuart1.Init.ClockPrescaler = UART_PRESCALER_DIV1;
-  hlpuart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&hlpuart1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_UARTEx_SetTxFifoThreshold(&hlpuart1, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_UARTEx_SetRxFifoThreshold(&hlpuart1, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_UARTEx_DisableFifoMode(&hlpuart1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN LPUART1_Init 2 */
-
-  /* USER CODE END LPUART1_Init 2 */
-
-}
-
-/**
-  * @brief TIM1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM1_Init(void)
-{
-
-  /* USER CODE BEGIN TIM1_Init 0 */
-
-  /* USER CODE END TIM1_Init 0 */
-
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_IC_InitTypeDef sConfigIC = {0};
-
-  /* USER CODE BEGIN TIM1_Init 1 */
-
-  /* USER CODE END TIM1_Init 1 */
-  htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 169;
-  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 65535;
-  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim1.Init.RepetitionCounter = 0;
-  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_IC_Init(&htim1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterOutputTrigger2 = TIM_TRGO2_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
-  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
-  sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
-  sConfigIC.ICFilter = 0;
-  if (HAL_TIM_IC_ConfigChannel(&htim1, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM1_Init 2 */
-
-  /* USER CODE END TIM1_Init 2 */
-
-}
-
-/**
-  * @brief TIM2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM2_Init(void)
-{
-
-  /* USER CODE BEGIN TIM2_Init 0 */
-
-  /* USER CODE END TIM2_Init 0 */
-
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-
-  /* USER CODE BEGIN TIM2_Init 1 */
-
-  /* USER CODE END TIM2_Init 1 */
-  htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 169;
-  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 4294967295;
-  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM2_Init 2 */
-
-  /* USER CODE END TIM2_Init 2 */
-
-}
-
-/**
-  * @brief TIM3 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM3_Init(void)
-{
-
-  /* USER CODE BEGIN TIM3_Init 0 */
-
-  /* USER CODE END TIM3_Init 0 */
-
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-
-  /* USER CODE BEGIN TIM3_Init 1 */
-
-  /* USER CODE END TIM3_Init 1 */
-  htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 169;
-  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 25000;
-  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM3_Init 2 */
-
-  /* USER CODE END TIM3_Init 2 */
-
-}
-
-/**
-  * @brief TIM4 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM4_Init(void)
-{
-
-  /* USER CODE BEGIN TIM4_Init 0 */
-
-  /* USER CODE END TIM4_Init 0 */
-
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-
-  /* USER CODE BEGIN TIM4_Init 1 */
-
-  /* USER CODE END TIM4_Init 1 */
-  htim4.Instance = TIM4;
-  htim4.Init.Prescaler = 169;
-  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim4.Init.Period = 1000;
-  htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim4, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM4_Init 2 */
-
-  /* USER CODE END TIM4_Init 2 */
-
-}
-
-/**
-  * Enable DMA controller clock
-  */
-static void MX_DMA_Init(void)
-{
-
-  /* DMA controller clock enable */
-  __HAL_RCC_DMAMUX1_CLK_ENABLE();
-  __HAL_RCC_DMA1_CLK_ENABLE();
-
-  /* DMA interrupt init */
-  /* DMA1_Channel1_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
-  /* DMA1_Channel2_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel2_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Channel2_IRQn);
-
-}
-
-/**
-  * @brief GPIO Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_GPIO_Init(void)
-{
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
-  /* USER CODE BEGIN MX_GPIO_Init_1 */
-
-  /* USER CODE END MX_GPIO_Init_1 */
-
-  /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-  __HAL_RCC_GPIOF_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0|LD2_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin : B1_Pin */
-  GPIO_InitStruct.Pin = B1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PA0 LD2_Pin */
-  GPIO_InitStruct.Pin = GPIO_PIN_0|LD2_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
-
-  /* USER CODE BEGIN MX_GPIO_Init_2 */
-
-  /* USER CODE END MX_GPIO_Init_2 */
-}
-
 /* USER CODE BEGIN 4 */
 void delay() {
 	{
@@ -511,6 +202,17 @@ void delay() {
 	}
 }
 
+// Define this in main.c
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  // Check if the interrupt was triggered by PA5
+  if(GPIO_Pin == GPIO_PIN_5)
+  {
+  KALMAN_Multi_Model_Init(&Model_data[0], Model_data[0].Process_Noise, Model_data[0].R[0], Model_buffer[0], Model_buffer[1], Model_buffer[2], Model_buffer[3]);
+  KALMAN_Multi_Model_Init(&Model_data[1], Model_data[1].Process_Noise, Model_data[1].R[0], Model_buffer[0], Model_buffer[1], Model_buffer[2], Model_buffer[3]);
+  KALMAN_Multi_Model_Init(&Model_data[2], Model_data[2].Process_Noise, Model_data[2].R[0], Model_buffer[0], Model_buffer[1], Model_buffer[2], Model_buffer[3]);
+  }
+}
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 	// Check if the interrupt was triggered by Timer 2
 	if (htim->Instance == TIM3) {
@@ -519,49 +221,60 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
 		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_0);
 	}
 	if (htim->Instance == TIM4) { // 1. Compute Kalman Filters
-		if (Mode == 1) {
-			for (int i = 0; i < 3; i++) {
-				KALMAN_1D_Compute(&Pos_cost_data[i], TIM_Data.Distance);
-				data[i] = Pos_cost_data[i].x;
-			}
-		} else if (Mode == 2) {
-			for (int i = 0; i < 3; i++) {
-				KALMAN_Multi_Velocity_Compute(&Velo_cost_data[i],
-						(float32_t) TIM_Data.Distance);
-				data[i] = Velo_cost_data[i].X[0];
-			}
-		} else {
-			for (int i = 0; i < 3; i++) {
-				data[i] = 0;
-			}
-		}
-		uint64_t data_b[3];
-		for (int i = 0; i < 3; i++) {
-			double temp_d = (double) data[i];
-			// This captures the raw IEEE-754 bit pattern
-			data_b[i] = *(uint64_t*) &temp_d;
-		}
-		double dist_d = (double) TIM_Data.Distance;
-		// 3. Extract raw bytes uint64_t
-		uint64_t dist_b;
-		dist_b = *(uint64_t*) &dist_d;
-		// 4. Pack the TxBuffer (New Mapping)
-		TxBuffer[0] = UART_Header; // Index 0 // Velocity 1 (Bytes 1-8)
-		for (int i = 0; i < 8; i++) {
-			TxBuffer[1 + i] = (uint8_t) (data_b[0] >> (8 * i));
-		} // Velocity 2 (Bytes 9-16)
-		for (int i = 0; i < 8; i++) {
-			TxBuffer[9 + i] = (uint8_t) (data_b[1] >> (8 * i));
-		} // Velocity 3 (Bytes 17-24)
-		for (int i = 0; i < 8; i++) {
-			TxBuffer[17 + i] = (uint8_t) (data_b[2] >> (8 * i));
-		} // Distance (Bytes 25-32)
-		for (int i = 0; i < 8; i++) {
-			TxBuffer[25 + i] = (uint8_t) (dist_b >> (8 * i));
-		}
-		TxBuffer[33] = UART_Stopper; // Index 33
-		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5); // 5. Transmit 34 bytes total // (Header + 4x8 bytes + Stopper = 34)
-		HAL_UART_Transmit_DMA(&hlpuart1, TxBuffer, 34);
+		switch (Mode)
+    {
+      int i;
+    case 1:
+      for(i = 0 ; i<3 ; i++){
+        KALMAN_1D_Compute(&Pos_cost_data[i],TIM_Data.Distance);
+        data_pos[i] = Pos_cost_data[i].x;
+        data_velo[i] = 0.0f;
+      }
+      break;
+    case 2:
+      for(i = 0 ; i<3 ; i++){
+        KALMAN_Multi_Velocity_Compute(&Velo_cost_data[i], TIM_Data.Distance);
+        data_pos[i] = Velo_cost_data[i].X[0];
+        data_velo[i] = Velo_cost_data[i].X[1];
+      }
+      break;
+    case 3:
+    for(i = 0 ; i<3 ; i++){
+        KALMAN_Multi_Model_Compute(&Model_data[i], TIM_Data.Distance);
+        data_pos[i] = Model_data[i].X[0];
+        data_velo[i] = Model_data[i].X[1];
+    }
+      break;
+    default:
+    for(i = 0 ; i<3 ; i++){
+        data_pos[i] = 0;
+        data_velo[i] = 0;
+    }
+      break;
+    }
+
+ // --- DATA CONVERSION & UART TRANSMISSION ---
+    
+    double pos_double[3];
+    double velo_double[3];
+
+    // 1. Cast float32 data to double (64-bit)
+    for(int i = 0; i < 3; i++) {
+      pos_double[i]  = (double)data_pos[i];
+      velo_double[i] = (double)data_velo[i];
+    }
+    for(int i = 0; i < 3; i++) {
+      memcpy(&TxBuffer[(i*16)+1], &pos_double[i], sizeof(pos_double[i]));
+      memcpy(&TxBuffer[(i*16)+9], &velo_double[i], sizeof(velo_double[i]));
+    }
+    double Distance_buffer = (double)TIM_Data.Distance;
+      memcpy(&TxBuffer[49], &Distance_buffer, sizeof(Distance_buffer));
+    TxBuffer[0] = UART_Header;
+    TxBuffer[57] = UART_Stopper;
+
+
+    
+		HAL_UART_Transmit_DMA(&hlpuart1, TxBuffer, 58);
 	}
 }
 
@@ -591,20 +304,39 @@ if (htim->Instance == TIM1) {
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 
-if (huart == &hlpuart1) {
-	Mode = RxBuffer[1];
+    if (huart == &hlpuart1) {
+        
+        // 1. Process the 4 double variables (Bytes 0 through 31)
+       for (int i = 0; i < 4; i++) {
+           uint64_t raw_bits = 0;
+
+           // Shift 8 bytes into a 64-bit integer (Assuming Little-Endian payload)
+           raw_bits |= ((uint64_t)RxBuffer[(i * 8) + 1] << 0);
+           raw_bits |= ((uint64_t)RxBuffer[(i * 8) + 2] << 8);
+           raw_bits |= ((uint64_t)RxBuffer[(i * 8) + 3] << 16);
+           raw_bits |= ((uint64_t)RxBuffer[(i * 8) + 4] << 24);
+           raw_bits |= ((uint64_t)RxBuffer[(i * 8) + 5] << 32);
+           raw_bits |= ((uint64_t)RxBuffer[(i * 8) + 6] << 40);
+           raw_bits |= ((uint64_t)RxBuffer[(i * 8) + 7] << 48);
+           raw_bits |= ((uint64_t)RxBuffer[(i * 8) + 8] << 56);
+
+           // Type-pun the raw 64-bit integer into a double safely
+           double temp_double;
+           memcpy(&temp_double, &raw_bits, sizeof(double));
+
+           // Cast the 64-bit double down to 32-bit float and store it
+           Model_buffer[i] = (float32_t)temp_double;
+       }
+
+       // 2. Process the final int8_t Mode variable (Byte index 32)
+       if(RxBuffer[0] == 14) {
+           Mode = RxBuffer[33];
+       }
+        
+        // Remember to re-arm the interrupt to listen for the next payload
+//        HAL_UART_Receive_IT(&hlpuart1, RxBuffer, 34);
+    }
 }
-}
-//
-//	void UARTDMAConfig(){
-//		HAL_UART_Receive_DMA(&hlpart1, RxBuffer ,10);
-//	}
-//
-//	void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
-//		if(huart == &hlpuart1){
-//
-//		}
-//	}
 
 /* USER CODE END 4 */
 

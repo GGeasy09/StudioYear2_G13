@@ -74,6 +74,14 @@ void KALMAN_Multi_Velocity_Compute(KALMAN_Multi_Velocity_Params* params, float32
 
 //Kalman 2D Model with spring
 typedef struct KALMAN_Multi_Model{
+   float32_t K_Spring;
+   float32_t B_Damping;
+   float32_t Initial_Pos;
+   float32_t Origin_Mass;
+   float32_t Addon_Mass;
+   float32_t Sum_Mass;
+   float32_t Process_Noise;
+
   float32_t X[2];                 arm_matrix_instance_f32 X_matrix;
   float32_t F[4];                 arm_matrix_instance_f32 F_matrix;
   float32_t F_trans[4];           arm_matrix_instance_f32 F_trans_matrix;
@@ -85,13 +93,12 @@ typedef struct KALMAN_Multi_Model{
   float32_t R[1];                 arm_matrix_instance_f32 R_matrix;
   float32_t K[2];                 arm_matrix_instance_f32 K_matrix;
   float32_t K_trans[2];           arm_matrix_instance_f32 K_trans_matrix;
-  float32_t G[2];                 arm_matrix_instance_f32 G;
+  float32_t G[2];                 arm_matrix_instance_f32 G_matrix;
   float32_t u;
 
 
   //Step 1 State Extrapolation X = FX + Gu
-  float32_t FX[2];                arm_matrix_instance_f32 FX;
-  float32_t Gu[2];                arm_matrix_instance_f32 Gu;
+  float32_t FX[2];                arm_matrix_instance_f32 FX_matrix;
   //X = FX + Gu
 
   //Step 2 State Covariance Extrapolate P = FPF_trans+Q
@@ -126,5 +133,5 @@ typedef struct KALMAN_Multi_Model{
   //P = KHPKH_trans + KRK_trans
 }KALMAN_Multi_Model_Params;
 
-void KALMAN_Multi_Model_Init(KALMAN_Multi_Velocity_Params* params, float32_t process_noise, float32_t measurement_noise);
+void KALMAN_Multi_Model_Init(KALMAN_Multi_Model_Params* params, float32_t process_noise, float32_t measurement_noise, float32_t stiffness, float32_t damping, float32_t Init_Pos, float32_t Addon_Mass);
 void KALMAN_Multi_Model_Compute(KALMAN_Multi_Model_Params* params, float32_t measurement);

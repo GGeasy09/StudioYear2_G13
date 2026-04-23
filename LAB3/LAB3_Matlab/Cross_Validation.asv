@@ -1,0 +1,6 @@
+clear; close all;
+load("LAB3_Matlab_Result\Graph\EXP1 Velo3 1_2m 5Nut.mat");
+data_result_1 = data.getElement("Offset_V3");
+load("LAB3_Matlab_Result\Estimate Result\EXP1.mat");
+Experiment_Value = SDOSessionData.Data.Workspace.LocalWorkspace.Exp.OutputData.Values.value;
+Experiment_Time = 
