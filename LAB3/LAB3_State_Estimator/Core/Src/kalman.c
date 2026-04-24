@@ -138,9 +138,9 @@ void KALMAN_Multi_Velocity_Compute(KALMAN_Multi_Velocity_Params* params, float32
 void KALMAN_Multi_Model_Init(KALMAN_Multi_Model_Params* params, float32_t process_noise, float32_t measurement_noise, float32_t stiffness, float32_t damping, float32_t Init_Pos, float32_t Addon_Mass){
    params->R[0] = measurement_noise;
    params->Process_Noise = process_noise;
-
+   params->Initial_Pos = Init_Pos;
    // Copy temp arrays to struct arrays using loops
-   float32_t init_guess_state[2] = {1.0f,0.0f};// X
+   float32_t init_guess_state[2] = {Init_Pos,0.0f};// X
    for(int i=0; i<2; i++) params->X[i] = init_guess_state[i];
    params->Addon_Mass = Addon_Mass;
    params->Origin_Mass = 0.148f;
@@ -155,6 +155,8 @@ void KALMAN_Multi_Model_Init(KALMAN_Multi_Model_Params* params, float32_t proces
    for(int i=0; i<4; i++) params->P[i] = init_guess_variance[i];
 
    float32_t process_noise_matrix[4] = {buffer1,buffer2,buffer2,buffer4}; //Q
+   for(int i=0; i<4; i++) params->Q[i] = process_noise_matrix[i];
+
 
    float32_t buffer5 = params->K_Spring*KALMAN_FREQ/params->Sum_Mass*-1.0f;
    float32_t buffer6 = 1.0f - params->B_Damping*KALMAN_FREQ/params->Sum_Mass;
@@ -210,7 +212,7 @@ void KALMAN_Multi_Model_Init(KALMAN_Multi_Model_Params* params, float32_t proces
 
 }
 void KALMAN_Multi_Model_Compute(KALMAN_Multi_Model_Params* params, float32_t measurement){
-   params->Z[0] = measurement;
+   params->Z[0] = 16.28f-measurement;
    arm_mat_init_f32(&params->Z_matrix, 1, 1, params->Z);  // Update Z matrix
 
    // Step 1: State Extrapolation X = F * X

@@ -53,13 +53,14 @@ KALMAN_Multi_Model_Params Model_data[3] = { 0 };
 char msg_buffer[50];
 int32_t buffer;
 volatile uint8_t tx_ready_flag = 1;
-uint8_t TxBuffer[100];
+uint8_t TxBuffer[120];
 uint8_t RxBuffer[50];
 uint8_t DMAstate;
 int32_t Normalvalue;
 float32_t data_pos[3];
 float32_t data_velo[3];
-
+float32_t data_kalman_pos[3];
+float32_t data_kalman_velo[3];
 float32_t Model_buffer[4];
 
 volatile int Mode;
@@ -125,15 +126,15 @@ int main(void)
 	Normalvalue = 100;
 	Mode = 0;
 
-	KALMAN_1D_Init(&Pos_cost_data[0], 0.001f, 0.0075f); //target process measure
-	KALMAN_1D_Init(&Pos_cost_data[1], 0.01f, 0.0075f); //target process measure
-	KALMAN_1D_Init(&Pos_cost_data[2], 0.1f, 0.0075f); //target process measure
+	KALMAN_1D_Init(&Pos_cost_data[0], 0.0000000075f, 0.0075f); //target process measure
+	KALMAN_1D_Init(&Pos_cost_data[1], 0.0000075f, 0.0075f); //target process measure
+	KALMAN_1D_Init(&Pos_cost_data[2], 0.0075f, 0.0075f); //target process measure
 	KALMAN_Multi_Velocity_Init(&Velo_cost_data[0], 750000.0f, 0.0075f);
 	KALMAN_Multi_Velocity_Init(&Velo_cost_data[1], 750000.0f, 0.0075f);
 	KALMAN_Multi_Velocity_Init(&Velo_cost_data[2], 750000.0f, 0.0075f);
-  KALMAN_Multi_Model_Init(&Model_data[0], 750000.0f, 0.75f, 29.415f, 0.04f, 14.05f, 0.115f);
-  KALMAN_Multi_Model_Init(&Model_data[1], 750000.0f, 0.75f, 29.415f, 0.04f, 14.05f, 0.115f);
-  KALMAN_Multi_Model_Init(&Model_data[2], 750000.0f, 0.75f, 29.415f, 0.04f, 14.05f, 0.115f);
+  KALMAN_Multi_Model_Init(&Model_data[0], 7.5f, 0.0075f, 0.0f, 0.0f, 0.0f, 0.0f);
+  KALMAN_Multi_Model_Init(&Model_data[1], 75.0f, 0.0075f, 0.0f, 0.0f, 0.0f, 0.0f);
+  KALMAN_Multi_Model_Init(&Model_data[2], 750.0f, 0.0075f, 0.0f, 0.0f, 0.0f, 0.0f);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -206,7 +207,7 @@ void delay() {
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   // Check if the interrupt was triggered by PA5
-  if(GPIO_Pin == GPIO_PIN_5)
+  if(GPIO_Pin == GPIO_PIN_13)
   {
   KALMAN_Multi_Model_Init(&Model_data[0], Model_data[0].Process_Noise, Model_data[0].R[0], Model_buffer[0], Model_buffer[1], Model_buffer[2], Model_buffer[3]);
   KALMAN_Multi_Model_Init(&Model_data[1], Model_data[1].Process_Noise, Model_data[1].R[0], Model_buffer[0], Model_buffer[1], Model_buffer[2], Model_buffer[3]);
@@ -228,7 +229,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
       for(i = 0 ; i<3 ; i++){
         KALMAN_1D_Compute(&Pos_cost_data[i],TIM_Data.Distance);
         data_pos[i] = Pos_cost_data[i].x;
-        data_velo[i] = 0.0f;
+        data_velo[i] = Pos_cost_data[i].K;
       }
       break;
     case 2:
@@ -257,24 +258,31 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
     
     double pos_double[3];
     double velo_double[3];
+    double Kalman_pos_double[3];
+    double Kalman_velo_double[3];
 
     // 1. Cast float32 data to double (64-bit)
     for(int i = 0; i < 3; i++) {
       pos_double[i]  = (double)data_pos[i];
       velo_double[i] = (double)data_velo[i];
+      Kalman_pos_double[i] = (double)Kalman_pos_double[i];
+      Kalman_velo_double[i] = (double)Kalman_velo_double[i];
+
     }
     for(int i = 0; i < 3; i++) {
-      memcpy(&TxBuffer[(i*16)+1], &pos_double[i], sizeof(pos_double[i]));
-      memcpy(&TxBuffer[(i*16)+9], &velo_double[i], sizeof(velo_double[i]));
+      memcpy(&TxBuffer[(i*32)+1], &pos_double[i], sizeof(pos_double[i]));
+      memcpy(&TxBuffer[(i*32)+9], &velo_double[i], sizeof(velo_double[i]));
+      memcpy(&TxBuffer[(i*32)+17], &Kalman_pos_double[i], sizeof(double));
+      memcpy(&TxBuffer[(i*32)+25], &Kalman_velo_double[i], sizeof(double));
     }
     double Distance_buffer = (double)TIM_Data.Distance;
-      memcpy(&TxBuffer[49], &Distance_buffer, sizeof(Distance_buffer));
+      memcpy(&TxBuffer[97], &Distance_buffer, sizeof(Distance_buffer));
     TxBuffer[0] = UART_Header;
-    TxBuffer[57] = UART_Stopper;
+    TxBuffer[105] = UART_Stopper;
 
 
     
-		HAL_UART_Transmit_DMA(&hlpuart1, TxBuffer, 58);
+		HAL_UART_Transmit_DMA(&hlpuart1, TxBuffer, 106);
 	}
 }
 

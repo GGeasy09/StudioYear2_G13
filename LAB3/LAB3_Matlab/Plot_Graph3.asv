@@ -1,0 +1,21 @@
+clear; close all;
+
+% Load data
+load("LAB3_Matlab_Result\Part3\exp2_10_4cm.mat");
+
+%offset 0.87
+
+
+% Extract raw numeric arrays from the timeseries objects and convert cm to m (/100)
+pos1 = data.getElement("Origin_Pos1").Values.Data / 100;
+pos2 = data.getElement("Origin_Pos2").Values.Data / 100;
+pos3 = data.getElement("Origin_Pos3").Values.Data / 100;
+data_distance = data.getElement("Offset_Distance").Values.Data / 100;
+
+% Extract velocity and convert cm/s to m/s (/100)
+velo1 = data.getElement("Velocity1").Values.Data / 100;
+velo2 = data.getElement("Velocity2").Values.Data / 100;
+velo3 = data.getElement("Velocity3").Values.Data / 100;
+
+% Extract time array from one of the timeseries objects
+Time = data.getElement("Offset_Distance").Values.Time;

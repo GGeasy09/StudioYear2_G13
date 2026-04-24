@@ -1,0 +1,88 @@
+clear; close all;
+
+% Load data
+load("LAB3_Matlab_Result\Part3\exp1_13_16cm.mat");
+
+% Extract raw numeric arrays from the timeseries objects using .Data
+pos1 = data.getElement("Origin_Pos1").Values.Data;
+pos2 = data.getElement("Origin_Pos2").Values.Data;
+pos3 = data.getElement("Origin_Pos3").Values.Data;
+data_distance = data.getElement("Offset_Distance").Values.Data;
+velo1 = data.getElement("Velocity1").Values.Data;
+velo2 = data.getElement("Velocity2").Values.Data;
+velo3 = data.getElement("Velocity3").Values.Data;
+
+% Extract time array from one of the timeseries objects
+Time = data.getElement("Offset_Distance").Values.Time;
+
+%% Plot 1: Position 1 and Distance
+figure('Name', 'Position 1 & Distance');
+hold on;
+plot(Time, pos1, 'b-', 'LineWidth', 1.5, 'DisplayName', 'Position 1');
+plot(Time, data_distance,  'LineWidth', 1.5, 'DisplayName', 'Offset Distance');
+hold off;
+xlabel('Time (s)');
+ylabel('Position / Distance');
+title('Origin Position 1 and Offset Distance vs. Time');
+legend('Location', 'best');
+grid on;
+
+%% Plot 2: Position 2 and Distance
+figure('Name', 'Position 2 & Distance');
+hold on;
+plot(Time, pos2, 'g-', 'LineWidth', 1.5, 'DisplayName', 'Position 2');
+plot(Time, data_distance,  'LineWidth', 1.5, 'DisplayName', 'Offset Distance');
+hold off;
+xlabel('Time (s)');
+ylabel('Position / Distance');
+title('Origin Position 2 and Offset Distance vs. Time');
+legend('Location', 'best');
+grid on;
+
+%% Plot 3: Position 3 and Distance
+figure('Name', 'Position 3 & Distance');
+hold on;
+plot(Time, pos3, 'm-', 'LineWidth', 1.5, 'DisplayName', 'Position 3');
+plot(Time, data_distance,  'LineWidth', 1.5, 'DisplayName', 'Offset Distance');
+hold off;
+xlabel('Time (s)');
+ylabel('Position / Distance');
+title('Origin Position 3 and Offset Distance vs. Time');
+legend('Location', 'best');
+grid on;
+
+%% Plot 4: Position 1 and Velocity 1
+figure('Name', 'Velo1');
+yyaxis left;
+plot(Time, pos1, 'b-', 'LineWidth', 1.5);
+ylabel('Position 1');
+yyaxis right;
+plot(Time, velo1, 'r-', 'LineWidth', 1.5);
+ylabel('Velocity 1');
+xlabel('Time (s)');
+title('กราฟ');
+grid on;
+
+%% Plot 5: Position 2 and Velocity 2
+figure('Name', 'Velo2');
+yyaxis left;
+plot(Time, pos2, 'g-', 'LineWidth', 1.5);
+ylabel('Position 2');
+yyaxis right;
+plot(Time, velo2, 'r-', 'LineWidth', 1.5);
+ylabel('Velocity 2');
+xlabel('Time (s)');
+title('Position 2 & Velocity 2 vs. Time');
+grid on;
+
+%% Plot 6: Position 3 and Velocity 3
+figure('Name', 'Velo3');
+yyaxis left;
+plot(Time, pos3, 'm-', 'LineWidth', 1.5);
+ylabel('Position 3');
+yyaxis right;
+plot(Time, velo3, 'r-', 'LineWidth', 1.5);
+ylabel('Velocity 3');
+xlabel('Time (s)');
+title('Position 3 & Velocity 3 vs. Time');
+grid on;
