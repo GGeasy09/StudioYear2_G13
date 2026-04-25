@@ -3,13 +3,13 @@
 g = 9.81;
 k = 29.415;
 b = 0;
-m_def = 0.038;
+m_def = 0.191;
 mass_0 = 0.148;
-init_pos_def = 0.030;
-offset_time_def = 1.265;
+init_pos_def = 0.1041;
+offset_time_def = 1.065;
 
 % --- Load Data ---
-target_file = '"C:\Users\USER\Downloads\5nut_KalmanforEstimate.mat"';
+target_file = 'LAB3_Matlab_Result\EXP4 Velo3 1_2m 5Nut.mat';
 if exist(target_file, 'file')
     load(target_file);
 else
