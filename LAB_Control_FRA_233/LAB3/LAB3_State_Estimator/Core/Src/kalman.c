@@ -24,7 +24,7 @@ void KALMAN_1D_Compute(KALMAN_1D_Params* params, float32_t Input){
 }
 
 void KALMAN_Multi_Velocity_Init(KALMAN_Multi_Velocity_Params* params, float32_t process_noise, float32_t measurement_noise){
-   params->R[0] = measurement_noise;
+   params->R[0] = measurement_noise; 
    // Copy temp arrays to struct arrays using loops
    float32_t init_guess_state[2] = {1.0f,1.0f};// X
    for(int i=0; i<2; i++) params->X[i] = init_guess_state[i];
