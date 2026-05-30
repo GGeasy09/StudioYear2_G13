@@ -1,0 +1,2 @@
+../Core/Src/elec_cabient.c:3:6:SYSTEM_STATE_Joystick_Update	16	static
+../Core/Src/elec_cabient.c:31:6:SYSTEM_STATE_PilotRamp_SetExclusive	16	static

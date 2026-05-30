@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STM32 UART Real-Time Plotter</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f4f4f9; padding: 20px; }
+        .controls { margin-bottom: 20px; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #0078D7; color: white; border: none; border-radius: 4px; }
+        button:hover { background: #005A9E; }
+        canvas { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body>
+
+    <div class="controls">
+        <h2>STM32 UART Plotter</h2>
+        <p><strong>Note:</strong> Only works on Chrome, Edge, or Opera. Firefox/Safari do not support Web Serial.</p>
+        <button id="connectBtn">Connect to COM Port</button>
+        <span id="status" style="margin-left: 15px; font-weight: bold; color: red;">Disconnected</span>
+    </div>
+
+    <div>
+        <canvas id="myChart" width="800" height="400"></canvas>
+    </div>
+
+    <script>
+        let port;
+        let reader;
+        let keepReading = true;
+
+        // Chart.js Setup
+        const ctx = document.getElementById('myChart').getContext('2d');
+        const maxDataPoints = 100; // How many points to show on screen
+        
+        const myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Array(maxDataPoints).fill(''), // Blank X-axis labels
+                datasets: [
+                    { label: 'Data 1', borderColor: 'red', data: Array(maxDataPoints).fill(null), tension: 0.1 },
+                    { label: 'Data 2', borderColor: 'blue', data: Array(maxDataPoints).fill(null), tension: 0.1 },
+                    { label: 'Data 3', borderColor: 'green', data: Array(maxDataPoints).fill(null), tension: 0.1 },
+                    { label: 'Data 4', borderColor: 'orange', data: Array(maxDataPoints).fill(null), tension: 0.1 },
+                    { label: 'Data 5', borderColor: 'purple', data: Array(maxDataPoints).fill(null), tension: 0.1 },
+                    { label: 'Data 6', borderColor: 'cyan', data: Array(maxDataPoints).fill(null), tension: 0.1 }
+                ]
+            },
+            options: { animation: false, responsive: true, scales: { y: { beginAtZero: false } } }
+        });
+
+        // Web Serial API Connection
+        document.getElementById('connectBtn').addEventListener('click', async () => {
+            try {
+                // Request port and open at 5,000,000 baud
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 921600 });
+                
+                document.getElementById('status').innerText = "Connected!";
+                document.getElementById('status').style.color = "green";
+                
+                readLoop();
+            } catch (err) {
+                console.error('Connection failed:', err);
+                alert("Failed to connect. Make sure Simulink/MATLAB has released the COM port!");
+            }
+        });
+
+        async function readLoop() {
+            reader = port.readable.getReader();
+            let rxBuffer = new Uint8Array(0);
+            let packetCount = 0;
+
+            try {
+                while (keepReading) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+
+                    // Append new incoming bytes to our sliding buffer
+                    let tempBuffer = new Uint8Array(rxBuffer.length + value.length);
+                    tempBuffer.set(rxBuffer);
+                    tempBuffer.set(value, rxBuffer.length);
+                    rxBuffer = tempBuffer;
+
+                    // Search for our 50-byte packets (0xFF header ... 48 bytes ... 0x0F terminator)
+                    while (rxBuffer.length >= 50) {
+                        if (rxBuffer[0] === 0xFF && rxBuffer[49] === 0x0F) {
+                            
+                            // Extract the 48 data bytes
+                            const dataBytes = rxBuffer.slice(1, 49);
+                            const dataView = new DataView(dataBytes.buffer);
+                            
+                            // Parse 6 doubles. (true = little-endian, matching STM32)
+                            const d1 = dataView.getFloat64(0, true);
+                            const d2 = dataView.getFloat64(8, true);
+                            const d3 = dataView.getFloat64(16, true);
+                            const d4 = dataView.getFloat64(24, true);
+                            const d5 = dataView.getFloat64(32, true);
+                            const d6 = dataView.getFloat64(40, true);
+
+                            // Downsample: Only plot every 50th packet so the browser doesn't crash
+                            packetCount++;
+                            if (packetCount % 50 === 0) {
+                                updateChart([d1, d2, d3, d4, d5, d6]);
+                            }
+
+                            // Shift the buffer forward by 50 bytes
+                            rxBuffer = rxBuffer.slice(50);
+                        } else {
+                            // If the first byte isn't our header, shift the buffer by 1 to realign
+                            rxBuffer = rxBuffer.slice(1);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error("Read error:", error);
+            } finally {
+                reader.releaseLock();
+            }
+        }
+
+        function updateChart(newValues) {
+            for (let i = 0; i < 6; i++) {
+                myChart.data.datasets[i].data.push(newValues[i]);
+                myChart.data.datasets[i].data.shift(); // Remove oldest point
+            }
+            myChart.update();
+        }
+    </script>
+</body>
+</html>

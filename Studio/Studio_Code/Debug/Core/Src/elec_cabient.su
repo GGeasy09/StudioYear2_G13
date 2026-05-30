@@ -1,0 +1,9 @@
+../Core/Src/elec_cabient.c:3:6:SYSTEM_STATE_Joystick_Update	16	static
+../Core/Src/elec_cabient.c:32:6:PilotRamp_SetPower	16	static
+../Core/Src/elec_cabient.c:39:6:PilotRamp_SetAuto	16	static
+../Core/Src/elec_cabient.c:50:6:Gripper_SetOpen	16	static
+../Core/Src/elec_cabient.c:57:6:Gripper_SetUp	16	static
+../Core/Src/elec_cabient.c:64:6:Gripper_ReadState	16	static
+../Core/Src/elec_cabient.c:74:6:PilotLamp_SetWhite	16	static
+../Core/Src/elec_cabient.c:88:9:Gripper_Pick	24	static
+../Core/Src/elec_cabient.c:138:9:Gripper_Place	24	static

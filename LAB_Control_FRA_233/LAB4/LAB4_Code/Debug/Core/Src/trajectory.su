@@ -1,0 +1,10 @@
+../Core/Src/trajectory.c:4:25:safe_time	16	static
+../Core/Src/trajectory.c:12:6:TRAJ_State_Init	16	static
+../Core/Src/trajectory.c:16:6:TRAJ_Trapezoidal_Plan	40	static
+../Core/Src/trajectory.c:35:14:TRAJ_Trapezoidal_Compute	96	static
+../Core/Src/trajectory.c:99:6:TRAJ_SCurveLimits_Plan	64	static
+../Core/Src/trajectory.c:157:14:TRAJ_SCurveLimits_Compute	168	static
+../Core/Src/trajectory.c:258:6:TRAJ_MinJerk_Plan	24	static
+../Core/Src/trajectory.c:266:14:TRAJ_MinJerk_Compute	88	static
+../Core/Src/trajectory.c:307:6:TRAJ_MinJerk_Vlim_Plan	32	static
+../Core/Src/trajectory.c:326:14:TRAJ_MinJerk_Vlim_Compute	88	static

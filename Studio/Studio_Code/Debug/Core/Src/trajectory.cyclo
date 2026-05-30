@@ -1,0 +1,17 @@
+../Core/Src/trajectory.c:8:25:safe_time	2
+../Core/Src/trajectory.c:13:25:deg2rad	1
+../Core/Src/trajectory.c:14:25:rad2deg	1
+../Core/Src/trajectory.c:15:25:clampf_t	3
+../Core/Src/trajectory.c:26:6:TRAJ_State_Init	1
+../Core/Src/trajectory.c:30:6:TRAJ_Trapezoidal_Plan	3
+../Core/Src/trajectory.c:49:14:TRAJ_Trapezoidal_Compute	5
+../Core/Src/trajectory.c:114:6:TRAJ_SCurveLimits_Plan	6
+../Core/Src/trajectory.c:172:14:TRAJ_SCurveLimits_Compute	9
+../Core/Src/trajectory.c:274:6:TRAJ_MinJerk_Plan	1
+../Core/Src/trajectory.c:282:14:TRAJ_MinJerk_Compute	3
+../Core/Src/trajectory.c:324:6:TRAJ_MinJerk_Vlim_Plan	2
+../Core/Src/trajectory.c:343:14:TRAJ_MinJerk_Vlim_Compute	3
+../Core/Src/trajectory.c:385:6:TrajManager_Init	1
+../Core/Src/trajectory.c:401:11:TrajManager_DynTime	1
+../Core/Src/trajectory.c:407:6:TrajManager_Plan	8
+../Core/Src/trajectory.c:445:14:TrajManager_Step	6

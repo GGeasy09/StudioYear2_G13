@@ -1,0 +1,6 @@
+../Core/Src/trajectory.c:12:6:TRAJ_Trapezoidal_Plan	0	static
+../Core/Src/trajectory.c:31:14:TRAJ_Trapezoidal_Compute	0	static
+../Core/Src/trajectory.c:95:6:TRAJ_SCurveLimits_Plan	40	static
+../Core/Src/trajectory.c:153:14:TRAJ_SCurveLimits_Compute	0	static
+../Core/Src/trajectory.c:254:6:TRAJ_MinJerk_Plan	0	static
+../Core/Src/trajectory.c:262:14:TRAJ_MinJerk_Compute	0	static

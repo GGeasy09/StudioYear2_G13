@@ -2,5 +2,3 @@
 ../Core/Src/kalman.c:12:6:KALMAN_1D_Compute	1
 ../Core/Src/kalman.c:26:6:KALMAN_Multi_Velocity_Init	6
 ../Core/Src/kalman.c:85:6:KALMAN_Multi_Velocity_Compute	1
-../Core/Src/kalman.c:138:6:KALMAN_Multi_Model_Init	7
-../Core/Src/kalman.c:214:6:KALMAN_Multi_Model_Compute	1

@@ -1,0 +1,3 @@
+../Core/Src/system_state.c:32:6:SYSTEM_STATE_Encoder_Init	0	static
+../Core/Src/system_state.c:37:6:SYSTEM_STATE_Encoder_Compute	0	static
+../Core/Src/system_state.c:102:6:PWM	16	static

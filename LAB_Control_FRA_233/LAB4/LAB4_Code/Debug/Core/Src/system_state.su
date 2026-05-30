@@ -1,0 +1,5 @@
+../Core/Src/system_state.c:32:6:SYSTEM_STATE_Encoder_Init	24	static
+../Core/Src/system_state.c:37:6:SYSTEM_STATE_Encoder_Compute	40	static
+../Core/Src/system_state.c:102:6:PWM	24	static
+../Core/Src/system_state.c:126:6:SYSTEM_STATE_Homing	16	static
+../Core/Src/system_state.c:193:11:convert_degree2rad	16	static
