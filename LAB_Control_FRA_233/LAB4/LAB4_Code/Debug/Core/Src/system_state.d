@@ -32,9 +32,10 @@ Core/Src/system_state.o: ../Core/Src/system_state.c \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim_ex.h \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart.h \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h \
- ../Core/Inc/cascade.h ../Core/Inc/kalman.h ../Core/Inc/trajectory.h \
- ../Core/Inc/tim.h ../Core/Inc/main.h ../Core/Inc/elec_cabient.h \
- ../Core/Inc/gpio.h ../Core/Inc/tim.h ../Core/Inc/gpio.h
+ ../Core/Inc/cascade.h ../Core/Inc/motor_params.h ../Core/Inc/kalman.h \
+ ../Core/Inc/trajectory.h ../Core/Inc/tim.h ../Core/Inc/main.h \
+ ../Core/Inc/elec_cabient.h ../Core/Inc/gpio.h ../Core/Inc/tim.h \
+ ../Core/Inc/gpio.h
 ../Core/Inc/system_state.h:
 ../Middlewares/Third_Party/ARM_CMSIS/CMSIS/DSP/Include/arm_math.h:
 ../Drivers/CMSIS/Include/cmsis_compiler.h:
@@ -70,6 +71,7 @@ Core/Src/system_state.o: ../Core/Src/system_state.c \
 ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart.h:
 ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h:
 ../Core/Inc/cascade.h:
+../Core/Inc/motor_params.h:
 ../Core/Inc/kalman.h:
 ../Core/Inc/trajectory.h:
 ../Core/Inc/tim.h:

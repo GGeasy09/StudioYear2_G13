@@ -139,8 +139,9 @@ void TRAJ_SCurveLimits_Plan(Traj_SCurveLimits_t *traj, float32_t start, float32_
     /* Time at flat acceleration */
     float32_t t_a = (v_max_local / a_max_local) - t_j;
     
-    /* Distance required to reach v_max_local */
-    float32_t dist_accel = t_j * a_max_local * (t_j + t_a); // Total distance for accel + decel phases
+    /* Distance required to reach v_max_local (accel + decel phases).
+     * Each side covers v_max*(2*t_j + t_a)/2, so both sides = v_max*(2*t_j + t_a). */
+    float32_t dist_accel = v_max_local * (2.0f * t_j + t_a);
 
     /* Pass 2: Check if max velocity can be reached given the overall distance */
     if (delta < dist_accel) {
@@ -224,7 +225,7 @@ Traj_State_t TRAJ_SCurveLimits_Compute(const Traj_SCurveLimits_t *traj, float32_
     /* 4. Constant Velocity */
     else if (t < T4) {
         float32_t dt = t - T3;
-        float32_t dist_accel = traj->v_max * (tj + ta) * 0.5f; // Symmetric geometry area
+        float32_t dist_accel = traj->v_max * (2.0f * tj + ta) * 0.5f; // accel-phase distance
         a = 0.0f;
         v = traj->v_max;
         p = dist_accel + (v * dt);

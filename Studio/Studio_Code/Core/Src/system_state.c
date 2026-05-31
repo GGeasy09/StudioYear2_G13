@@ -101,9 +101,24 @@ void SYSTEM_STATE_Encoder_Compute(Encoder *encoder)
 
 void PWM(float32_t voltage, float32_t direct_add)
 {
+    /* Voltage dead-band: when the controller is barely commanding anything,
+     * the sign of `voltage` flips with position noise. Adding the friction-comp
+     * offset (direct_add) in that flipping direction causes the motor to buzz /
+     * oscillate at the setpoint. Below this threshold, hold the motor OFF and
+     * skip the friction kick. Raise it if it still hunts, lower it if it stops
+     * short of target. */
+    const float32_t PWM_VOLTAGE_DEADBAND = 0.20f;   /* volts */
+
     /* Clamp to rail limits */
     if      (voltage >  VOLTAGE_MAX) voltage =  VOLTAGE_MAX;
     else if (voltage < -VOLTAGE_MAX) voltage = -VOLTAGE_MAX;
+
+    float32_t vmag = (voltage < 0.0f) ? -voltage : voltage;
+    if (vmag < PWM_VOLTAGE_DEADBAND)
+    {
+        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);   /* motor off — no friction kick */
+        return;
+    }
 
     /* Direction */
     if (voltage >= 0.0f)
@@ -138,7 +153,7 @@ void SYSTEM_STATE_Homing(Proximity *prox)
                 prox->first_detect = prox->instant_detect;
 
                 // Command the motor to reverse aggressively
-                prox->vout = -5.0;
+                prox->vout = 3.0;
 
                 // Record the exact millisecond we started backing off
                 backoff_start_time = HAL_GetTick();
@@ -150,11 +165,11 @@ void SYSTEM_STATE_Homing(Proximity *prox)
 
         case 99:
             /* This is the Non-Blocking Timestamp State */
-            prox->vout = -5.0;
+            prox->vout = 3.0;
 
 
             // Check if 500 milliseconds have passed since we recorded the start time
-            if ((HAL_GetTick() - backoff_start_time) >= 2500)
+            if ((HAL_GetTick() - backoff_start_time) >= 1500)
             {
                 // Time is up! Clear the interrupt flag so we don't double-trigger
                 prox->proximity_flag = 0;

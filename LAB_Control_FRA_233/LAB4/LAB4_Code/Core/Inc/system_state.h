@@ -18,7 +18,7 @@ typedef enum{
 
 typedef enum{
     STATE_WAITING_COMMAND = 0,
-    STATE_HOMING = 1,         
+    STATE_HOMING = 1,
     STATE_RUNNING = 2
 } STATE_MACHINE;
 
@@ -26,9 +26,11 @@ typedef struct
 {
     STATE_MACHINE cur_state;
     ELECTRIC_CABIENT_COMMAND trust;
-    float32_t home_pos;
+    float32_t home_pos;              /* joystick-set home — used for Go Home trajectory    */
+    float32_t basesystem_home_pos;   /* BaseSystem SET_HOME snapshot — origin for BS coords */
     float32_t cur_pos;
-    int trajectory_start_botton;
+    float32_t cur_pos_degree;   /* current position in degrees relative to home */
+    int16_t   cur_hole_index;   /* current hole index 0-71 relative to home     */
 } SYSTEM_STATE;
 
 
@@ -66,5 +68,7 @@ typedef struct
 
 void SYSTEM_STATE_Homing(Proximity *prox);
 /* NEW: Main state machine execution function */
-float32_t convert_degree2rad(float32_t Deg);
+
+float32_t SYSTEM_STATE_convert_degree2rad(float32_t Deg);
+float32_t SYSTEM_STATE_convert_rad2degree(float32_t rad);
 #endif /* SYSTEM_STATE_H */

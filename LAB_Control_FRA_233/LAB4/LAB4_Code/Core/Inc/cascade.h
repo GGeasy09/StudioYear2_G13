@@ -2,8 +2,9 @@
 #define CASCADE_PID_H
 
 #include <stdint.h>
-#include "arm_math.h" /* CMSIS-DSP Library */
-#include "kalman.h"
+#include "arm_math.h"    /* CMSIS-DSP Library */
+#include "motor_params.h" /* MOTOR_PARAMS struct */
+#include "kalman.h"       /* KALMAN_Multi_Model_Params */
 #include "trajectory.h"
 
 

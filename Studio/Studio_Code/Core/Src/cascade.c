@@ -132,8 +132,8 @@ void CASCADE_Controller_Compute_Position(PID *pid, float32_t setpoint, float32_t
     float32_t internal_ki = pid->ki;
     float32_t error  = setpoint - measured;
     float32_t p_term = pid->kp * error;
-    if(fabsf(error) < 0.1 && fabsf(error) > 0.0015){
-        internal_ki = 2.0f;
+    if(fabsf(error) < 0.1 && fabsf(error) >= 0.0017){
+        internal_ki = 0.0f;
     }
     float32_t i_term = pid->integral + internal_ki * error * pid->dt;
     float32_t d_term = pid->kd * (error - pid->prev_error) / pid->dt;
@@ -146,7 +146,7 @@ void CASCADE_Controller_Compute_Position(PID *pid, float32_t setpoint, float32_t
 
     // /* Near-zero dead-zone: softly decay integral, do NOT corrupt prev_error */
     int integral_frozen = 0;
-    if (fabsf(error) < 0.0015f)
+    if (fabsf(error) < 0.0017f)
     {
         pid->integral  *= 0.75f;
         integral_frozen = 1;
@@ -261,8 +261,8 @@ void CASCADE_Compute(Cascade   *csc,
     CASCADE_Disturbance_Compute(csc);
 
 
-    if(csc->outer->error < 0.005){
-        csc->Kalman->X[2] *= 0.95f;
+    if(fabs(csc->outer->error) < 0.005){
+        csc->Kalman->X[2] *= 0.9f;
     }
     /* ---- Clamp disturbance FF to ±5 V before summing ---- */
     csc->feedforward->disturbance_value = clampf(csc->feedforward->disturbance_value, -5.0f, 5.0f);

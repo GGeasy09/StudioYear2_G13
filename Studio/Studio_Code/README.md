@@ -1,424 +1,211 @@
-# [V1.2] Base System — How it works (FRA263 / FRA264) 
+# Base System Firmware — 1-DOF Circular Robot (STM32G474)
 
-This document describes the **Base System** application that runs on the PC: what it connects to, **how data moves**, and **what each Modbus register address means**. You use the program as provided; you do not need its internal source code to follow this guide.
-<!-- 
-For step-by-step connection checks and example messages, see **[`test.md`](test.md)**. -->
+> 🌐 ภาษาไทย: [README.th.md](README.th.md)
+
+Embedded firmware for a **single-degree-of-freedom rotary (circular) robot**. The MCU runs a
+cascade position/velocity controller with feedforward and a Kalman state estimator, drives the
+motor through a real-time control loop, and exposes the robot to a PC application over **Modbus RTU**.
+It can be operated two ways:
+
+- **Local control** via the electrical-cabinet **joystick / buttons / mode switch** (`Trust_Joystick`).
+- **Remote control** via the **Base System** PC app — web UI → WebSocket → Modbus over USB serial
+  (`Trust_Basesystem`). See `../Base_system/README.md` for the host side and the full register map.
+
+Supported operations: **Homing**, **Jog**, **Point-to-point**, **Auto pick-&-place sequence**,
+and **Performance / Precision tests**, with **emergency** and **soft-stop** safety handling.
 
 ---
 
+## 1. Hardware target
 
-## Prerequisites
+| Item | Detail |
+|------|--------|
+| MCU | STM32G474 (Cortex-M4F, single-precision FPU, CMSIS-DSP) |
+| Motor drive | **TIM1 CH1** PWM (`PWM()` in `system_state.c`) |
+| Microsecond time base | **TIM2** (free-running, trajectory timing) |
+| Encoder | **TIM3** in encoder mode (quadrature position) |
+| Control loop ISR | **TIM20** period-elapsed callback @ **2 kHz** (`Robot_Period_Control_Loop`) |
+| Modbus timing | **TIM16** (T1.5 / T3.5 character gaps) |
+| Serial link | **USART2**, **230400 baud, 8 data, Even parity, 1 stop**, slave addr **21 (0x15)** |
+| CAN | **FDCAN** (configured) |
+| Homing | Proximity reference sensor state machine |
+| Discrete I/O | Joystick buttons, mode switch, pilot lamps, power/auto relays, gripper relays & reed sensors |
 
-Before starting the installation, ensure you have the following software installed:
-
-* **Docker Desktop:** [Download here](https://www.docker.com)
+Mechanical convention: **one hole = 5°** (`DEG_PER_HOLE`). Positive = CCW, negative = CW.
 
 ---
 
-## Installation Steps
-Follow these steps to deploy both the Frontend and Backend services with a single command:
+## 2. Build & flash
 
-### 1. Prepare Your Files
-Ensure the following 3 files are located in the same directory:
-1.  `frontend-image_v1_2.tar` (The Web UI Image)
-2.  `docker-compose.yml` (The configuration file start the interface)
-3. `main.exe` (For connect to STM)
+1. Open **STM32CubeIDE** and import this project (contains `.cproject` / `.project`).
+2. Hardware configuration is in **`Base_System.ioc`** — open with CubeMX to change pins/peripherals, then regenerate.
+3. Select the **Debug** configuration and build (`make -j all`).
+4. Flash / debug over **ST-Link** (`Base_System Debug.launch`).
+5. For PC control, run the Base System host app and select the ST-Link Virtual COM port.
 
-### 2. Load Docker Images
-Open your Terminal or Command Prompt in that directory and run:
-```bash
-docker load -i frontend-image_v1_2.tar
+---
+
+## 3. Project layout
+
+Only application modules are listed; HAL/CMSIS and CubeMX-generated peripheral files
+(`dma.c`, `fdcan.c`, `gpio.c`, `tim.c`, `usart.c`, `stm32g4xx_*`, `sys*.c`) are standard.
+
+| File | Role |
+|------|------|
+| `Core/Src/main.c` | Entry, init, super-loop, the main **state machine** (`Robot_State_Process`) and the **2 kHz control loop** (`Robot_Period_Control_Loop`). Owns global objects (`sys_state`, `Controller`, `Kalman`, `traj_mgr`, joystick/gripper/sequence/test state). |
+| `Core/Src/system_state.c` · `Inc/system_state.h` | Encoder read/compute, **`PWM()`** motor output, **`SYSTEM_STATE_Homing()`**, position bookkeeping, deg↔rad helpers. Defines `SYSTEM_STATE`, `Encoder`, `Proximity`. |
+| `Core/Src/elec_cabient.c` · `Inc/elec_cabient.h` | Electrical-cabinet I/O: **`SYSTEM_STATE_Joystick_Update()`** (mode switch + buttons + soft-stop), pilot lamp/ramp relays (`PilotRamp_SetPower`, `PilotRamp_SetAuto`, `PilotLamp_SetWhite`), gripper control (relays + reed limit sensors). |
+| `Core/Src/trajectory.c` · `Inc/trajectory.h` | Motion planners — **Trapezoidal**, **S-curve (7-segment)**, **Min-jerk**, **Min-jerk velocity-limited** — plus the high-level **`TrajManager`** API (`_Init`, `_Plan`, `_Step`, `_DynTime`). |
+| `Core/Src/cascade.c` · `Inc/cascade.h` | **Cascade controller**: outer position PID → inner velocity PID, with motor **feedforward** and disturbance terms. `CASCADE_Controller_Init`, `CASCADE_Cascade_Start`, `CASCADE_Compute`. |
+| `Core/Src/kalman.c` · `Inc/kalman.h` | **4-state Kalman estimator** (position, velocity, disturbance, accel) using CMSIS-DSP matrices. `KALMAN_Multi_Model_Init`, `_Compute`, `KALMAN_Calc_Acceleration`. |
+| `Core/Src/BaseSystem.c` · `Inc/BaseSystem.h` | **Modbus RTU slave**: frame RX/parse/CRC, 50-register holding map, command decode (`BaseCmd`), heartbeat. Command enums (`CMD_MODE_*`, `CMD_TEST_*`, `CMD_GRIPPER_*`). |
+| `Core/Inc/motor_params.h` | Motor model constants: torque/back-EMF constants, inertia, damping, resistance, inductance, FF filter time constant. |
+
+---
+
+## 4. Control architecture
+
+Runs every 0.5 ms inside `Robot_Period_Control_Loop` (TIM20 @ 2 kHz):
+
+```
+ Encoder (TIM3) ──► Kalman estimator ──► state: pos / velo / disturbance
+                                              │
+ TrajManager_Step ──► reference (pos, velo) ──┤
+                                              ▼
+                          Cascade: outer PID (position) ──► inner PID (velocity)
+                                              + feedforward (motor model)
+                                              ▼
+                                   voltage ──► PWM() ──► TIM1 motor drive
 ```
 
-### 3. Start the System
+When no trajectory is active (`traj_mgr.running == 0`) the controller holds the last commanded
+position (`sys_state.cur_pos`). A small static-friction offset is added at the PWM stage.
 
-1. Launch the entire stack using Docker Compose:
-```bash
-docker-compose up -d
+Default gains (top of `main.c`):
+
+| Loop | Kp | Ki | Kd |
+|------|----|----|----|
+| Inner (velocity) | 0.52259 | 10.2259 | 0.0 |
+| Outer (position) | 2.0 | 0.0 | 1.0 |
+
+---
+
+## 5. Operating modes & state machine
+
+`Robot_State_Process()` runs in the super-loop (non-real-time). Control authority is selected by
+`sys_state.trust`: **`Trust_Joystick`** (local cabinet) or **`Trust_Basesystem`** (PC/Modbus).
+
+Base System modes follow the Modbus `0x01` one-hot values:
+
+| Mode | Value | Behavior |
+|------|------:|----------|
+| Idle | 0 | No command |
+| **Home** | 1 | Run proximity homing, then move to home reference |
+| **Jog** | 2 | One signed step (degrees) from current position per request |
+| **Auto** | 4 | Point-to-point or pick-&-place **sequence** (`seq`: go-pick → grip → go-place → release, per pair) |
+| **Set home** | 8 | Snapshot current position as Base System origin (joystick-only) |
+| **Test** | 16 | **Performance** (S-curve out/back) or **Precision** (repeated min-jerk init↔final round-trips) |
+
+Safety overrides (checked first, every cycle):
+
+- **Emergency** (PA4): stops the ISR, cuts PWM, clears all activity, latches until released; on release re-seeds position from the encoder and restarts homing.
+- **Soft stop** (joystick or `0x25`): completes/cancels motion and returns to *waiting command*.
+
+---
+
+## 6. Joystick / local control (`Trust_Joystick`)
+
+The electrical cabinet provides a **mode switch**, six colored buttons, two white step buttons, and
+a soft-stop line. Inputs are read by `SYSTEM_STATE_Joystick_Update()`; all actions are **edge-triggered**
+(fire once on a press, i.e. raw goes `1 → 0`).
+
+**Physical layout** (front of the cabinet panel, as wired):
+
 ```
-<!-- Status: Once the terminal shows Started, the dashboard will be live at: http://localhost:3000 -->
+   ( White-1 )                       [ ⌷ ] mode switch
+   ( White-2 )
+                                     ╔═══════╗
+                                     ║  DB9  ║  serial (Modbus/USART2)
+   ( Black )                         ╚═══════╝
 
-2. Start the python server
-```bash
-main.exe
+ ( Blue )    ( Yellow )              [□□] terminal block
+   ( Red )
+       │
+   soft-stop / e-stop cable
 ```
 
-Once `server.py` is running, your terminal should display:
-`WebSocket Server is running on ws://localhost:8765...`
+The two white buttons are **stacked vertically** on the panel but are named **White-left (PC1)**
+and **White-right (PB1)** in firmware. Note the hardware link: pressing the "right" white button
+can also trigger the "left" line (see comment in `elec_cabient.h`).
 
-1.  Open your web browser.
-2.  Navigate to: **[http://localhost:3000](http://localhost:3000)** (Reload once if it shown disconnect from python, If not work check if main is running)
+**Button hardware map** (`elec_cabient.h`):
 
----
+| Button | Pin | Button | Pin |
+|--------|-----|--------|-----|
+| Mode switch | PA15 | White-left (upper) | PC1 |
+| Black | PA9 | White-right (lower) | PB1 |
+| Red | PA8 | Blue | PB2 |
+| Yellow | PB9 | Soft-stop | PB7 |
 
-### How to Stop and Remove the Container
-If you need to stop the system or clean up the container, use these commands:
+### 6.1 White buttons (jog by holes) — both modes
+- **White-left** → **+** direction (CCW); **White-right** → **−** direction (CW).
+- Step size depends on the mode switch: **mode 0 = 5 holes** per press (`5 × DEG_PER_HOLE`),
+  **other modes = 1 hole** per press. Each press dispatches a min-jerk move.
 
-* Stops and removes all containers and networks.
-    ```bash
-    docker-compose down
-    ```
-* Verifies if both Frontend and Backend are currently running.
-    ```bash
-    docker-compose ps
-    ```
-* View error messages or activity from the Python Backend.
-    ```bash
-    docker-compose logs backend
-    ```
-* Restarts all containers without deleting them.
-    ```bash
-    docker-compose restart
-    ```
----
-## How to use 
+### 6.2 Mode 0 — direct gripper control
+| Button | Action |
+|--------|--------|
+| Black | Gripper **Open** |
+| Blue | Gripper **Close** |
+| Yellow | Gripper **Up** |
+| Red | Gripper **Down** |
 
-- **[How to use Basesystem 101](https://canva.link/9pr3jhzbh18pxbn)**
+### 6.3 Mode 1 — home / pick / place
+| Button | Action |
+|--------|--------|
+| Black | **Set home** = current position |
+| Blue | **Go to home** position |
+| Red | Start gripper **Pick** sequence |
+| Yellow | Start gripper **Place** sequence |
 
-
----
-
-<!-- > [!TIP]
-> Use `docker ps -a` to check the status of all your containers.
- -->
-
-> [!IMPORTANT]
-> Ensure that port **3000** (Web UI) and port **8765** (WebSocket) are not being used by other applications.
+The pick/place gripper state machine then runs each tick until the action completes (or times out).
 
 ---
 
+## 7. Key tunable parameters
 
+| Parameter | Location | Default | Meaning |
+|-----------|----------|---------|---------|
+| Control period | `TrajManager_Step` | `0.0005f` | 2 kHz loop period (must match TIM20) |
+| `DEG_PER_HOLE` | `main.c` | `5.0f` | Degrees per index/hole |
+| `GRIPPER_TIMEOUT_MS` | `main.c` | `5000` | Max wait per pick/place |
+| Dynamic move speed | `trajectory.c` | `110 °/s` | Nominal cruise used by `TrajManager_DynTime` |
+| Move time clamp | `trajectory.c` | `0.9 … 3.5 s` | Min/max auto min-jerk duration |
+| Position-reached tol. | `main.c` (seq phases) | `0.001745f` rad (≈0.1°) | Tolerance to advance a sequence step |
+| PID gains | `main.c` | see §4 | Cascade inner/outer tuning |
 
-
-## 1. What the Base System does (big picture)
-
-1. You use the **web user interface (UI)** in the browser.
-2. The UI talks to the Base System over a **local WebSocket** (JSON messages on your PC).
-3. The Base System talks to the **robot controller (STM32)** over **USB serial** using **Modbus RTU**.
-4. Each side only sees its own link: the UI never speaks Modbus directly; the robot never sees the WebSocket.
-
-
-**Serial link (Modbus RTU)** — must match the robot firmware:
-
-| Setting   | Value   |
-|----------|---------|
-| Baud     | 230400  |
-| Data bits| 8       |
-| Parity   | Even    |
-| Stop bits| 1       |
-
-**Modbus slave address:** default **21** 
+> **Note:** the 0.1° sequence tolerance is tight. If the controller settles with larger steady-state
+> error, sequence steps can stall; loosen it (e.g. `0.00873f` ≈ 0.5°) if needed.
 
 ---
 
-## 2. How data is **sent** and **received**
+## 8. Modbus interface (firmware side)
 
-### 2.1 From PC to robot (**WRITE**)
+The robot is a Modbus RTU **slave** (addr 21). The PC writes commands to holding registers and
+block-reads status/feedback:
 
-The Base System sends **Write Single Register** commands. Each write targets **one 16-bit holding register** at a time, identified by its **address** (hex below).
+- **Writes (PC→robot):** `0x01` mode, `0x05` jog degrees, `0x06–0x11` test params, `0x12–0x22`
+  pick-place sequence, `0x23–0x24` point-to-point, `0x25` soft stop, gripper `0x02–0x04`.
+- **Reads (robot→PC):** `0x00` heartbeat, `0x26` reed sensors, `0x27` current task,
+  `0x28/0x29/0x30` position/velocity/acceleration (**×10** scaled), `0x31` emergency.
 
-- Some registers carry **bit patterns** (mode flags, gripper command codes).
-- Others carry **signed numbers** (−32768 … +32767). On the wire, negative values are sent as **16-bit two’s complement** (the same integer range, encoded as 0…65535).
-
-### 2.1.1 Registers that are mainly “one bit active”
-
-Every holding register is still **16 bits** on the wire. For many **control** and **status** addresses, the firmware only defines **low bits** (often **bit 0** only, or bits **0–4**). The tables below add **decimal**, **hex**, and **binary (low bits)**.
-
-<!-- - **WRITE:** e.g. **0x01** (mode) uses **one** power-of-two at a time -> exactly **one** bit set among bits 0–4. **0x04, 0x06, 0x23, 0x25** use **bit 0** as on/off or choice.
-- **READ:** e.g. **0x26–0x27, 0x31** — each listed bit is **1 = active**, **0 = inactive** (unless the lab states otherwise). -->
-
-Full **int16** magnitudes (jog, P2P value, test speeds, **0x28–0x30**) are **not** “one-hot bits”; use decimal / two’s complement for those.
-
-### 2.2 From robot to PC (**READ**)
-
-The Base System periodically **reads a block** of holding registers starting at address **0x00**, through **0x31** (50 registers in one read). That gives:
-
-- **Heartbeat** value on **0x00**
-- **Status** on **0x26 … 0x31** (sensors, task, motion, emergency)
-
-The UI is updated from these read values (position, speed, gripper state, etc.).
-
-### 2.3 Heartbeat (special case on **0x00**)
-
-| Who   | Action |
-|-------|--------|
-| Robot | Writes **22881** (“YA”) into register **0x00** when it expects a reply. |
-| Base System | Writes **18537** (“HI”) back into **0x00**. |
-
-**Update rates (timing behavior):**
-
-- **Status/UI update (STATS)**: ~**50 Hz**
-- **Heartbeat reply (HI)**: rate-limited to ~**5 Hz** (only written when YA is seen)
-
-If the Base System does not see the expected heartbeat pattern in time, the UI can show the link as **not alive**, even if the cable is plugged in.
-
-### 2.4 Numbers with a decimal place (position, speed, acceleration)
-
-For **READ** addresses **0x28, 0x29, 0x30**, the register holds a **signed integer** that is **10×** the real value:
-
-| Meaning        | Register | Decode |
-|----------------|----------|--------|
-| Real position  | 0x28     | `real = (signed raw) / 10` |
-| Real velocity  | 0x29     | same |
-| Real acceleration | 0x30  | same |
-
-**Example:** if the read raw value is **1234**, the Base System shows **123.4** for that quantity.
+Full register map, bit meanings, scaling and two's-complement rules: **`../Base_system/README.md`**.
+Firmware decode lives in `BaseSystem.c` (`BaseCmd` struct, `CMD_*` enums in `BaseSystem.h`).
 
 ---
 
-## 3. WRITE register map — commands the PC sends to the robot
-
-Every row is something the Base System can **write** when you use the UI. Addresses are **hexadecimal**.
-
-### 3.1 Summary table (all write addresses)
-
-| Addr | Topic | Short description |
-|-----:|--------|-------------------|
-| **0x00** | Heartbeat | Reply **HI (18537)** when robot sends **YA (22881)** on read. |
-| **0x01** | Operating mode | Select Home / Jog / Auto / Set home / Test (one flag value at a time). |
-| **0x02** | Manual gripper motion | Up, Down, Open, Close (encoded values below). |
-| **0x03** | Gripper sequence | Pick or Place. |
-| **0x04** | Gripper in AUTO | Enable or disable gripper actions during automatic motion. |
-| **0x05** | Jog | Signed step size in **degrees** (+ = CCW, − = CW). |
-| **0x06** | Test type | Performance vs Precision test. |
-| **0x07** | Performance test | Desired velocity. |
-| **0x08** | Performance test | Desired acceleration. |
-| **0x09** | Precision test | Initial position. |
-| **0x10** | Precision test | Final (target) position. |
-| **0x11** | Precision test | Repeat count; **sign** selects **unit** (degree vs index — see 3.6). |
-| **0x12 – 0x21** | Pick & place | Sequence slots: hole index and direction per slot (signed int16). |
-| **0x22** | Pick & place | Number of **pairs** (pick+place) in the sequence. |
-| **0x23** | Point-to-point | Unit: **degree** or **saved index**. |
-| **0x24** | Point-to-point | Target value (signed), interpreted using **0x23**. |
-| **0x25** | Safety | Soft stop: run vs stop. |
-
----
-
-### 3.2 **0x01** — Operating mode (single bit “on” among bits 0–4)
-
-The UI sends **one** value to **0x01**. Each value is a **power of two**: in binary, **exactly one** of the low bits is **1** (one-hot style for mode select).
-
-| Bit | Mask (dec) | Mask (hex) | Low 5 bits (binary) | Mode / command |
-|:---:|:----------:|:----------:|:-------------------:|----------------|
-| **0** | **1** | 0x0001 | `0b00001` | Go home |
-| **1** | **2** | 0x0002 | `0b00010` | Manual / Jog |
-| **2** | **4** | 0x0004 | `0b00100` | Auto |
-| **3** | **8** | 0x0008 | `0b01000` | Set home |
-| **4** | **16** | 0x0010 | `0b10000` | Test |
-
-The full register is 16 bits; bits **5–15** are **0** in normal use unless firmware defines more.
-
----
-
-### 3.3 **0x02** — Gripper: Up / Down / Open / Close (manual)
-
-Each command writes a **different code**; values **1, 2, 4** are **single-bit masks** in bits 0–2 (**Up** is all bits clear in that group).
-
-| Command | Dec | Hex | Low 4 bits (binary) | Note |
-|---------|----:|----:|:-------------------:|------|
-| Up      | **0** | 0x0000 | `0b0000` | No command bits set |
-| Down    | **1** | 0x0001 | `0b0001` | **bit 0** |
-| Open    | **2** | 0x0002 | `0b0010` | **bit 1** |
-| Close   | **4** | 0x0004 | `0b0100` | **bit 2** |
-
----
-
-### 3.4 **0x03** — Gripper: Pick / Place
-
-| Command | Dec | Hex | Low 2 bits (binary) | Active bit |
-|---------|----:|----:|:-------------------:|:----------:|
-| Pick    | **1** | 0x0001 | `0b01` | **bit 0** |
-| Place   | **2** | 0x0002 | `0b10` | **bit 1** |
-
----
-
-### 3.5 **0x04** — Gripper enable (used with AUTO)
-
-Only **bit 0** is used as enable; rest of the register is **0** in normal use.
-
-| Dec | Hex | Binary (low 4) | **bit 0** | Meaning |
-|----:|----:|:--------------:|:---------:|---------|
-| **0** | 0x0000 | `0b0000` | **0** | Gripper **disabled** during auto |
-| **1** | 0x0001 | `0b0001` | **1** | Gripper **enabled** during auto |
-
----
-
-### 3.6 **0x05** — Jog (degrees)
-
-| Content | Type | Meaning |
-|---------|------|---------|
-| Signed int16 | degrees step | **Positive** -> counter-clockwise (CCW). **Negative** -> clockwise (CW). |
-
----
-
-### 3.7 **0x06 – 0x11** — Test modes
-
-| Addr | Name | Value / type | Meaning |
-|-----:|------|----------------|----------|
-| **0x06** | Test mode | **0** / **1** (see bit table below) | Precision vs Performance |
-| **0x07** | Performance | Signed int16 | Desired **velocity** |
-| **0x08** | Performance | Signed int16 | Desired **acceleration** |
-| **0x09** | Precision | Signed int16 | **Initial** position |
-| **0x10** | Precision | Signed int16 | **Final** position |
-| **0x11** | Precision | Signed int16 | **Repetition count**; **sign** encodes **unit** for repeats (positive -> degree vs negative -> index)  |
-
-**0x06 — binary (test type, bit 0 only):**
-
-| Dec | Hex | Low 2 bits | **bit 0** | Meaning |
-|----:|----:|:----------:|:---------:|---------|
-| **0** | 0x0000 | `0b0` | **0** | Precision test |
-| **1** | 0x0001 | `0b1` | **1** | Performance test |
-
----
-
-### 3.8 **0x12 – 0x21** — Pick and place sequence
-
-There are **10 consecutive addresses** (**0x12** through **0x21**). Each holds **one signed 16-bit value** for one step of the programmed sequence.
-
-| Concept | Rule |
-|---------|------|
-| **Magnitude** | Hole **index** (e.g. 1…5). |
-| **Sign** | **+** -> counter-clockwise, **−** -> clockwise.|
-
-The Base System fills these from your pick/place plan in the UI, then writes **0x22**.
-
----
-
-### 3.9 **0x22** — Number of pick–place pairs
-
-| Content | Meaning |
-|---------|---------|
-| Unsigned count | How many **pairs** (pick + place) the sequence contains. |
-
----
-
-### 3.10 **0x23** — Point-to-point: unit
-
-Only **bit 0** selects the unit; **0** = degree, **1** = index.
-
-| Dec | Hex | Low 2 bits | **bit 0** | Unit for **0x24** |
-|----:|----:|:----------:|:---------:|-------------------|
-| **0** | 0x0000 | `0b0` | **0** | **Degree** |
-| **1** | 0x0001 | `0b1` | **1** | **Index**  |
-
----
-
-### 3.11 **0x24** — Point-to-point: target
-
-| Content | Meaning |
-|---------|---------|
-| Signed int16 | Target **degrees** or **index**, depending on **0x23**. Sign indicates direction where the motion planner uses it. |
-
----
-
-### 3.12 **0x25** — Soft stop
-
-| Dec | Hex | Low 2 bits | **bit 0** | Meaning |
-|----:|----:|:----------:|:---------:|---------|
-| **0** | 0x0000 | `0b0` | **0** | Normal running |
-| **1** | 0x0001 | `0b1` | **1** | Request **soft stop** |
-
----
-
-## 4. READ register map — status the robot sends to the PC
-
-The Base System **reads** these to refresh the UI. Block read covers **0x00** and **0x26 … 0x31**.
-
-### 4.1 Summary table
-
-| Addr | Name | What you use it for |
-|-----:|------|---------------------|
-| **0x00** | Heartbeat | Link life; robot sends **YA (22881)**; PC answers **HI** on write. |
-| **0x26** | Lead / reed sensors | Physical gripper limits and jaw state (bits). |
-| **0x27** | Current task | What the motion sequencer is doing (Homing, Pick, Place, etc.). |
-| **0x28** | Position | θ position vs current home (**÷ 10** for display). |
-| **0x29** | Velocity | **÷ 10** for display. |
-| **0x30** | Acceleration | **÷ 10** for display. |
-| **0x31** | Emergency | Emergency input / safety state (bit). |
-
----
-
-### 4.2 **0x26** — Lead / reed sensors (typical bit meaning)
-
-Low bits of the register describe **three reed switches** (on/off). The Base System derives gripper **height** and **jaw** labels for the UI.
-
-| Bit | Mask (hex) | Weight | Binary place | **1 =** | Meaning (hardware) |
-|:---:|:----------:|:------:|:------------:|---------|---------------------|
-| **0** | 0x0001 | 1 | `...0001` | Reed 1 **ON** | Often paired with bit 1 for **up/down** |
-| **1** | 0x0002 | 2 | `...0010` | Reed 2 **ON** | |
-| **2** | 0x0004 | 4 | `...0100` | Reed 3 **ON** | Often **jaw closed** when active |
-
-**Example raw value:** if **only** bits 0 and 2 are high -> `0b0101` -> dec **5** (0x0005). Compare to what you read on the bus after masking the low 4 bits.
-
-**Typical interpretation (when bits are wired as in the lab):**
-
-| Reed 1 | Reed 2 | UI show |
-|:------:|:------:|-------------|
-| ON | OFF | Up |
-| OFF | ON | Down |
-| other | other | Idle / between |
-
-| Reed 3 | UI show |
-|:------:|----------------|
-| ON | Closed |
-| OFF | Open |
-
-<!-- Exact wiring is defined on the robot; the **register** is always **0x26**. -->
-
----
-
-### 4.3 **0x27** — Current robot task 
-
-The Base System reads low bits and picks **one** task name (first match in this order). Each row is **“this bit = 1”** (other bits may be 0 or 1 depending on firmware; priority order is as implemented in the Base System).
-
-| Bit | Mask (hex) | Mask (dec) | Low 4 bits (example **only** this bit) | Shown task |
-|:---:|:----------:|:----------:|:---------------------------------------:|------------|
-| **0** | 0x0001 | 1 | `0b0001` | Homing |
-| **1** | 0x0002 | 2 | `0b0010` | Go Pick |
-| **2** | 0x0004 | 4 | `0b0100` | Go Place |
-| **3** | 0x0008 | 8 | `0b1000` | Go Point |
-| — | — | **0** | `0b0000` | Idle (if none of the above match) |
-
----
-
-### 4.4 **0x28, 0x29, 0x30** — Motion feedback (scaled ×10)
-
-| Addr   | Quantity | Decode |
-|--------|----------|--------|
-| **0x28** | Position | signed raw **÷ 10** = user units |
-| **0x29** | Velocity | signed raw **÷ 10** |
-| **0x30** | Acceleration | signed raw **÷ 10** |
-
----
-
-### 4.5 **0x31** — Emergency / safety state
-
-Typically only **bit 0** is defined; treat **1** as “active / latched” per lab.
-
-| Dec (if only bit0 matters) | Hex | Low 2 bits | **bit 0** | Meaning |
-|---------------------------:|----:|:----------:|:---------:|---------|
-| **0** | 0x0000 | `0b0` | **0** | Not in emergency (normal) |
-| **1** | 0x0001 | `0b1` | **1** | Emergency active (e.g. E-stop / interlock — per firmware) |
-
----
-
-## 5. Two’s complement (for signed registers)
-
-If you read or write a **signed** value as a raw 16-bit number:
-
-| If raw ≥ 32768 | Signed value = raw − 65536 |
-|----------------|----------------------------|
-| Else           | Signed value = raw |
-
-**Example:** raw **65413** -> signed **−123**. After **÷ 10** on 0x28–0x30, that is **−12.3** in display units.
-
----
-
-## 6. Windows: which COM port to choose
-
-1. Open **Device Manager** -> **Ports (COM & LPT)**.
-2. Find **STMicroelectronics STLink Virtual COM Port (COMx)**.
-3. In the Base System connect dialog, enter that **COM** number (**x**).
-
----
-  
+## 9. Notes / recent changes
+
+- `TrajManager` and its `Init/Plan/Step/DynTime` API are defined in `trajectory.{c,h}` and used throughout `main.c`.
+- All planner `*_Compute` functions explicitly set `out.Complete` in every path (a missing initializer previously caused trajectories to finish after a single step).
+- White-button direction and the mode-0 5-hole step are as described in §6.

@@ -51,14 +51,11 @@ void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, Joy_rl_Pin|Lead3_Pin|PWM_Dir_Pin|Grip1_Pin
-                          |Grip2_Pin|Lead1_Pin|light1_Pin|light2_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOC, Joy_rl_Pin|PWM_Dir_Pin|Grip1_Pin|Grip2_Pin
+                          |Lead1_Pin|light1_Pin|light2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(Lead2_GPIO_Port, Lead2_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, White_pilot_Pin|LD2_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -73,48 +70,47 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(Joy_rl_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : Lead3_Pin PWM_Dir_Pin Grip1_Pin Grip2_Pin
-                           Lead1_Pin light1_Pin light2_Pin */
-  GPIO_InitStruct.Pin = Lead3_Pin|PWM_Dir_Pin|Grip1_Pin|Grip2_Pin
-                          |Lead1_Pin|light1_Pin|light2_Pin;
+  /*Configure GPIO pin : Lead3_Pin */
+  GPIO_InitStruct.Pin = Lead3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(Lead3_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PWM_Dir_Pin Grip1_Pin Grip2_Pin Lead1_Pin
+                           light1_Pin light2_Pin */
+  GPIO_InitStruct.Pin = PWM_Dir_Pin|Grip1_Pin|Grip2_Pin|Lead1_Pin
+                          |light1_Pin|light2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : LD2_Pin */
-  GPIO_InitStruct.Pin = LD2_Pin;
+  /*Configure GPIO pins : White_pilot_Pin LD2_Pin */
+  GPIO_InitStruct.Pin = White_pilot_Pin|LD2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : Switch_Mode_Pin Joy_rr_Pin Joy_Blue_Pin Joy_rlB6_Pin
-                           Joy_soft_stop_Pin Joy_Yellow_Pin */
-  GPIO_InitStruct.Pin = Switch_Mode_Pin|Joy_rr_Pin|Joy_Blue_Pin|Joy_rlB6_Pin
-                          |Joy_soft_stop_Pin|Joy_Yellow_Pin;
+  /*Configure GPIO pins : Emergency_Pin Joy_red_Pin Joy_Black_Pin Joy_Mode_Pin */
+  GPIO_InitStruct.Pin = Emergency_Pin|Joy_red_Pin|Joy_Black_Pin|Joy_Mode_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : Switch_Mode_Pin Joy_rr_Pin Joy_Blue_Pin Lead2_Pin
+                           Joy_rlB6_Pin Joy_soft_stop_Pin Joy_Yellow_Pin */
+  GPIO_InitStruct.Pin = Switch_Mode_Pin|Joy_rr_Pin|Joy_Blue_Pin|Lead2_Pin
+                          |Joy_rlB6_Pin|Joy_soft_stop_Pin|Joy_Yellow_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : Lead2_Pin */
-  GPIO_InitStruct.Pin = Lead2_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(Lead2_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PC7 */
   GPIO_InitStruct.Pin = GPIO_PIN_7;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : Joy_red_Pin Joy_Black_Pin Joy_Mode_Pin */
-  GPIO_InitStruct.Pin = Joy_red_Pin|Joy_Black_Pin|Joy_Mode_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : Prox_Pin */
   GPIO_InitStruct.Pin = Prox_Pin;

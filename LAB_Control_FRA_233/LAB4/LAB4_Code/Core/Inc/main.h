@@ -74,6 +74,10 @@ void Error_Handler(void);
 #define Lead3_GPIO_Port GPIOC
 #define PWM_Dir_Pin GPIO_PIN_3
 #define PWM_Dir_GPIO_Port GPIOC
+#define White_pilot_Pin GPIO_PIN_1
+#define White_pilot_GPIO_Port GPIOA
+#define Emergency_Pin GPIO_PIN_4
+#define Emergency_GPIO_Port GPIOA
 #define LD2_Pin GPIO_PIN_5
 #define LD2_GPIO_Port GPIOA
 #define Grip1_Pin GPIO_PIN_4

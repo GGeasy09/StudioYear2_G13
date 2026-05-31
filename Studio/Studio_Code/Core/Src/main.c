@@ -43,14 +43,14 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define DEBUG_MODE 0
+#define DEBUG_MODE 1   /* 0 = normal, 1 = trajectory-tuning: P2P auto-fires gripper on arrival */
 
 //Inner Loop ---------
 #define Kp_inner 0.52259f
 #define Ki_inner 10.2259f
 #define Kd_inner 0.0f
 //Outer Loop ---------
-#define Kp_outer 2.0f
+#define Kp_outer 1.9f
 #define Ki_outer 0.0f
 #define Kd_outer 1.0f
 
@@ -66,6 +66,21 @@
 #define PROFILE_MINJERK_VLIM 1
 #define PROFILE_TRAPEZOID   2
 #define PROFILE_SCURVE      3
+
+/* ---- DEBUG_MODE 1 P2P tuning knobs — edit these and reflash ----
+ * Profile used for the point-to-point move while tuning:
+ *   PROFILE_MINJERK  -> auto-timed (uses P2P_TUNE_TIME below)
+ *   PROFILE_SCURVE   -> uses P2P_TUNE_VMAX / P2P_TUNE_AMAX / P2P_TUNE_JMAX
+ *   PROFILE_TRAPEZOID-> uses P2P_TUNE_TIME (total) / P2P_TUNE_ACCT (accel time) */
+#define P2P_TUNE_PROFILE    PROFILE_SCURVE
+#define P2P_TUNE_VMAX       4.05f    /* rad/s   (S-curve)            */
+#define P2P_TUNE_AMAX       4.8f    /* rad/s^2 (S-curve)            */
+#define P2P_TUNE_JMAX       1.5f   /* rad/s^3 (S-curve jerk)       */
+#define P2P_TUNE_TIME       1.5f    /* s       (min-jerk / trapz.) */
+#define P2P_TUNE_ACCT       0.3f    /* s       (trapezoid accel)   */
+
+#define static_friction_ff  0.45f
+#define dynamic_friction_ff 0.45f
 
 /* USER CODE END PD */
 
@@ -127,6 +142,7 @@ JoyEdges joy_prev = {0};
 /* ---- Joystick gripper action flags (mode 1) ---- */
 uint8_t joy_picking  = 0;   /* 1 = Gripper_Pick running  */
 uint8_t joy_placing  = 0;   /* 1 = Gripper_Place running */
+uint8_t p2p_grip_pending = 0; /* DEBUG_MODE 1: P2P move armed to fire gripper on arrival */
 
 /* ---- Color button 2s hold → go to robot reference ---- */
 uint32_t color_hold_start = 0;
@@ -147,7 +163,9 @@ MOTOR_PARAMS my_motor = {
 
 float32_t f32_buffer[10];
 float32_t vout;
-
+int moving;
+float32_t actual_vin = 0; //not to use any where for friction feedforward only
+float32_t friction_feedforward = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -227,7 +245,7 @@ int main(void)
    * 4. ACTIVATE ALGORITHM INITIALIZATIONS HERE
    * ==================================================================== */
   KALMAN_Multi_Model_Init(&Kalman, 3e-8f,9.9e-5f, 8e-4f, &my_motor);
-  CASCADE_Controller_Init(Kp_inner, Ki_inner, Kd_inner, &Inner, -12.0f, 12.0f, 0.0005f);
+  CASCADE_Controller_Init(Kp_inner, Ki_inner, Kd_inner, &Inner, -10.5f, 10.5f, 0.0005f);
   CASCADE_Controller_Init(Kp_outer, Ki_outer, Kd_outer, &Outer, -4.0f, 4.0f, 0.005f);
   CASCADE_Cascade_Start(&Controller, &Inner, &Outer, &ff, &my_motor, &Kalman);
 
@@ -250,7 +268,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-	  if(DEBUG_MODE == 0){
+	  if(DEBUG_MODE == 0 || DEBUG_MODE == 1){
 	      Modbus_Protocal_Worker();
 	      Robot_State_Process();
 
@@ -260,9 +278,10 @@ int main(void)
 	      if (sys_state.cur_hole_index < 0)
 	          sys_state.cur_hole_index += HOLE_COUNT;
 
-	      /* Motion feedback: position [deg], velocity [rad/s], acceleration [rad/s²] */
+	      /* Motion feedback: position [deg] = ACTUAL encoder position (relative to BS home),
+	       * velocity [rad/s], acceleration [rad/s²] */
 	      BaseSystem_SendMotionStatus(
-	          SYSTEM_STATE_convert_rad2degree(Kalman.X[0] - sys_state.basesystem_home_pos),
+	          SYSTEM_STATE_convert_rad2degree(encoder.encoder_rad - sys_state.basesystem_home_pos),
 	          Kalman.X[1],
 	          Kalman.accel_estimate);
 
@@ -356,7 +375,7 @@ void SystemClock_Config(void)
 static void TRAJ_Plan(int profile, float32_t target_deg,
                       float32_t p1, float32_t p2, float32_t p3)
 {
-    TrajManager_Plan(&traj_mgr, profile, target_deg, p1, p2, p3, Kalman.X[0]);
+    TrajManager_Plan(&traj_mgr, profile, target_deg, p1, p2, p3, encoder.encoder_rad);
     sys_state.cur_pos = traj_mgr.cur_pos_rad;
 }
 
@@ -461,11 +480,27 @@ void Robot_State_Process(void)
         if (Gripper_Place(&robot_gripper)) joy_placing = 0;
     }
 
+#if (DEBUG_MODE == 1)
+    /* ---- DEBUG_MODE 1: P2P trajectory tuning ----
+     * After a point-to-point move arrives within 0.1 deg of target, fire the
+     * gripper selected by Gripper_Seq (1 = Pick, 2 = Place), like the sequence does. */
+    if (p2p_grip_pending
+        && traj_mgr.state.Complete == 1
+        && !traj_mgr.running
+        && fabsf(encoder.encoder_rad - sys_state.cur_pos) <= 0.001745f)   /* ~0.1 deg */
+    {
+        p2p_grip_pending = 0;
+        robot_gripper.action_phase = 0;
+        if      (BaseCmd.Gripper_Seq == 1) { joy_picking = 1; joy_placing = 0; }  /* Pick  */
+        else if (BaseCmd.Gripper_Seq == 2) { joy_placing = 1; joy_picking = 0; }  /* Place */
+    }
+#endif
+
     /* SET_HOME from BaseSystem — snapshot current pos as BS coordinate origin */
     if (BaseCmd.flag_sethome_execute == 1)
     {
         BaseCmd.flag_sethome_execute  = 0;
-        sys_state.basesystem_home_pos = Kalman.X[0];
+        sys_state.basesystem_home_pos = encoder.encoder_rad;
     }
 
     /* =========================================================================
@@ -488,7 +523,7 @@ void Robot_State_Process(void)
             traj_mgr.running     = 0;
             seq.active       = 0;
             test.active      = 0;
-            TRAJ_Plan(PROFILE_MINJERK, 0.0f, TrajManager_DynTime(0.0f, Kalman.X[0]), 0.0f, 0.0f);   /* robot reference = 0° */
+            TRAJ_Plan(PROFILE_MINJERK, 0.0f, TrajManager_DynTime(0.0f, encoder.encoder_rad), 0.0f, 0.0f);   /* robot reference = 0° */
             sys_state.cur_state = STATE_RUNNING;
         }
     }
@@ -536,17 +571,19 @@ void Robot_State_Process(void)
             /* ---- Joystick mode ---- */
             if (sys_state.trust == Trust_Joystick)
             {
-                /* White buttons — always same regardless of mode */
+                /* White buttons — step size depends on mode:
+                 * mode 0 = 5 holes per press, other modes = 1 hole per press */
+                float32_t white_step = (robot_joy.mode == 0) ? (5.0f * DEG_PER_HOLE) : DEG_PER_HOLE;
                 if (robot_joy.raw_btn_white_left == 0 && joy_prev.white_left == 1)
                 {
-                    float32_t tgt = SYSTEM_STATE_convert_rad2degree(sys_state.cur_pos) - DEG_PER_HOLE;
-                    TRAJ_Plan(PROFILE_MINJERK, tgt, TrajManager_DynTime(tgt, Kalman.X[0]), 0.0f, 0.0f);
+                    float32_t tgt = SYSTEM_STATE_convert_rad2degree(sys_state.cur_pos) + white_step;
+                    TRAJ_Plan(PROFILE_MINJERK, tgt, TrajManager_DynTime(tgt, encoder.encoder_rad), 0.0f, 0.0f);
                     sys_state.cur_state = STATE_RUNNING;
                 }
                 else if (robot_joy.raw_btn_white_right == 0 && joy_prev.white_right == 1)
                 {
-                    float32_t tgt = SYSTEM_STATE_convert_rad2degree(sys_state.cur_pos) + DEG_PER_HOLE;
-                    TRAJ_Plan(PROFILE_MINJERK, tgt, TrajManager_DynTime(tgt, Kalman.X[0]), 0.0f, 0.0f);
+                    float32_t tgt = SYSTEM_STATE_convert_rad2degree(sys_state.cur_pos) - white_step;
+                    TRAJ_Plan(PROFILE_MINJERK, tgt, TrajManager_DynTime(tgt, encoder.encoder_rad), 0.0f, 0.0f);
                     sys_state.cur_state = STATE_RUNNING;
                 }
 
@@ -574,7 +611,7 @@ void Robot_State_Process(void)
                     if (robot_joy.raw_btn_blue == 0 && joy_prev.blue == 1)
                     {
                         float32_t tgt = SYSTEM_STATE_convert_rad2degree(sys_state.home_pos);
-                        TRAJ_Plan(PROFILE_MINJERK, tgt, TrajManager_DynTime(tgt, Kalman.X[0]), 0.0f, 0.0f);
+                        TRAJ_Plan(PROFILE_MINJERK, tgt, TrajManager_DynTime(tgt, encoder.encoder_rad), 0.0f, 0.0f);
                         sys_state.cur_state = STATE_RUNNING;
                     }
 
@@ -657,7 +694,7 @@ void Robot_State_Process(void)
                     BaseCmd.Target_Mode = CMD_MODE_IDLE;
                     {
                         float32_t tgt = SYSTEM_STATE_convert_rad2degree(sys_state.home_pos);
-                        TRAJ_Plan(PROFILE_MINJERK, tgt, TrajManager_DynTime(tgt, Kalman.X[0]), 0.0f, 0.0f);
+                        TRAJ_Plan(PROFILE_MINJERK, tgt, TrajManager_DynTime(tgt, encoder.encoder_rad), 0.0f, 0.0f);
                     }
                     break;
                 }
@@ -669,7 +706,7 @@ void Robot_State_Process(void)
                     BaseCmd.flag_jog_execute = 0;
                     registerFrame[0x05].U16 = 0;
                     float32_t tgt = SYSTEM_STATE_convert_rad2degree(sys_state.cur_pos) + BaseCmd.Jog_Degree;
-                    TRAJ_Plan(PROFILE_MINJERK, tgt, TrajManager_DynTime(tgt, Kalman.X[0]), 0.0f, 0.0f);
+                    TRAJ_Plan(PROFILE_MINJERK, tgt, TrajManager_DynTime(tgt, encoder.encoder_rad), 0.0f, 0.0f);
                     BaseCmd.Jog_Degree = 0.0f;
                 }
                 /* ---- P2P: single point-to-point move ---- */
@@ -682,7 +719,19 @@ void Robot_State_Process(void)
                     float32_t target   = (BaseCmd.P2P_Unit == 1)
                                          ? home_deg + BaseCmd.P2P_Target * DEG_PER_HOLE
                                          : home_deg + BaseCmd.P2P_Target;
-                    TRAJ_Plan(PROFILE_MINJERK, target, TrajManager_DynTime(target, Kalman.X[0]), 0.0f, 0.0f);
+#if (DEBUG_MODE == 1)
+                    /* Trajectory-tuning: profile + params come from the P2P_TUNE_* #defines above. */
+                    #if   (P2P_TUNE_PROFILE == PROFILE_SCURVE)
+                        TRAJ_Plan(PROFILE_SCURVE, target, P2P_TUNE_VMAX, P2P_TUNE_AMAX, P2P_TUNE_JMAX);
+                    #elif (P2P_TUNE_PROFILE == PROFILE_TRAPEZOID)
+                        TRAJ_Plan(PROFILE_TRAPEZOID, target, P2P_TUNE_TIME, P2P_TUNE_ACCT, 0.0f);
+                    #else  /* PROFILE_MINJERK */
+                        TRAJ_Plan(PROFILE_MINJERK, target, P2P_TUNE_TIME, 0.0f, 0.0f);
+                    #endif
+                    p2p_grip_pending = 1;   /* fire gripper once this move arrives */
+#else
+                    TRAJ_Plan(PROFILE_MINJERK, target, TrajManager_DynTime(target, encoder.encoder_rad), 0.0f, 0.0f);
+#endif
                 }
                 /* ---- SEQUENCE: pick-place pairs ---- */
                 else if (BaseCmd.Target_Mode == CMD_MODE_AUTO
@@ -697,7 +746,7 @@ void Robot_State_Process(void)
                         float32_t home_deg = SYSTEM_STATE_convert_rad2degree(sys_state.basesystem_home_pos);
                         int16_t   raw      = BaseCmd.PickPlace_Sequence[0];
                         float32_t tgt      = home_deg + (float)abs(raw) * DEG_PER_HOLE;
-                        TRAJ_Plan(PROFILE_MINJERK, tgt, TrajManager_DynTime(tgt, Kalman.X[0]), 0.0f, 0.0f);
+                        TRAJ_Plan(PROFILE_MINJERK, tgt, TrajManager_DynTime(tgt, encoder.encoder_rad), 0.0f, 0.0f);
                     }
                 }
                 /* ---- TEST mode trigger ---- */
@@ -735,7 +784,7 @@ void Robot_State_Process(void)
                     else
                     {
                         /* --- PRECISION: MinJerk, Init → Final → 1s → back → repeat --- */
-                        TRAJ_Plan(PROFILE_MINJERK, test_final, TrajManager_DynTime(test_final, Kalman.X[0]), 0.0f, 0.0f);
+                        TRAJ_Plan(PROFILE_MINJERK, test_final, TrajManager_DynTime(test_final, encoder.encoder_rad), 0.0f, 0.0f);
                     }
                 }
                 /* ---- TEST step advance ---- */
@@ -804,7 +853,7 @@ void Robot_State_Process(void)
                                 {
                                     test.delay_start = 0;
                                     test.phase = 2;
-                                    TRAJ_Plan(PROFILE_MINJERK, t_init, TrajManager_DynTime(t_init, Kalman.X[0]), 0.0f, 0.0f);
+                                    TRAJ_Plan(PROFILE_MINJERK, t_init, TrajManager_DynTime(t_init, encoder.encoder_rad), 0.0f, 0.0f);
                                 }
                                 break;
 
@@ -829,7 +878,7 @@ void Robot_State_Process(void)
                                     {
                                         test.delay_start = 0;
                                         test.phase = 0;
-                                        TRAJ_Plan(PROFILE_MINJERK, t_final, TrajManager_DynTime(t_final, Kalman.X[0]), 0.0f, 0.0f);
+                                        TRAJ_Plan(PROFILE_MINJERK, t_final, TrajManager_DynTime(t_final, encoder.encoder_rad), 0.0f, 0.0f);
                                     }
                                 }
                                 break;
@@ -845,7 +894,7 @@ void Robot_State_Process(void)
                     {
                         case 0: /* going to pick — wait trajectory done AND position reached */
                             if (traj_mgr.state.Complete == 1 && !traj_mgr.running
-                                && fabsf(Kalman.X[0] - sys_state.cur_pos) <= 0.001745f)
+                                && fabsf(encoder.encoder_rad - sys_state.cur_pos) <= 0.001745f)
                                 seq.phase = 1;
 
                             break;
@@ -869,7 +918,7 @@ void Robot_State_Process(void)
                                 int16_t   raw      = (slot < 10) ? BaseCmd.PickPlace_Sequence[slot] : 0;
                                 float32_t home_deg = SYSTEM_STATE_convert_rad2degree(sys_state.basesystem_home_pos);
                                 float32_t tgt      = home_deg + (float)abs(raw) * DEG_PER_HOLE;
-                                TRAJ_Plan(PROFILE_MINJERK, tgt, TrajManager_DynTime(tgt, Kalman.X[0]), 0.0f, 0.0f);
+                                TRAJ_Plan(PROFILE_MINJERK, tgt, TrajManager_DynTime(tgt, encoder.encoder_rad), 0.0f, 0.0f);
                                 seq.phase = 2;
                             }
 
@@ -879,7 +928,7 @@ void Robot_State_Process(void)
 
                         case 2: /* going to place — wait trajectory done AND position reached */
                             if (traj_mgr.state.Complete == 1 && !traj_mgr.running
-                                && fabsf(Kalman.X[0] - sys_state.cur_pos) <= 0.001745f)
+                                && fabsf(encoder.encoder_rad - sys_state.cur_pos) <= 0.001745f)
                                 seq.phase = 3;
 
                             break;
@@ -912,7 +961,7 @@ void Robot_State_Process(void)
                                     seq.active = 0;
                                     {
                                         float32_t tgt = SYSTEM_STATE_convert_rad2degree(sys_state.home_pos);
-                                        TRAJ_Plan(PROFILE_MINJERK, tgt, TrajManager_DynTime(tgt, Kalman.X[0]), 0.0f, 0.0f);
+                                        TRAJ_Plan(PROFILE_MINJERK, tgt, TrajManager_DynTime(tgt, encoder.encoder_rad), 0.0f, 0.0f);
                                     }
                                 }
                                 else
@@ -922,7 +971,7 @@ void Robot_State_Process(void)
                                     int16_t   raw      = (slot < 10) ? BaseCmd.PickPlace_Sequence[slot] : 0;
                                     float32_t home_deg = SYSTEM_STATE_convert_rad2degree(sys_state.basesystem_home_pos);
                                     float32_t tgt      = home_deg + (float)abs(raw) * DEG_PER_HOLE;
-                                    TRAJ_Plan(PROFILE_MINJERK, tgt, TrajManager_DynTime(tgt, Kalman.X[0]), 0.0f, 0.0f);
+                                    TRAJ_Plan(PROFILE_MINJERK, tgt, TrajManager_DynTime(tgt, encoder.encoder_rad), 0.0f, 0.0f);
                                 }
                             }
                             break;
@@ -989,7 +1038,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 void Robot_Period_Control_Loop(void)
 {
     /* 1. Encoder (always runs) */
-    SYSTEM_STATE_Encoder_Compute(&encoder);
+	  SYSTEM_STATE_Encoder_Compute(&encoder);
 
     /* ================================================================
      * 2. Kalman predict + update
@@ -998,9 +1047,34 @@ void Robot_Period_Control_Loop(void)
     KALMAN_Calc_Acceleration(&Kalman, vout);
 
     /* 5. Push Kalman estimates into cascade struct */
-    Controller.pos_state         = Kalman.X[0];
+    Controller.pos_state         = encoder.encoder_rad;
     Controller.velocity_state    = Kalman.X[1];
     Controller.disturbance_state = Kalman.X[2];
+
+#if (DEBUG_MODE == 1)
+    /* Tuning aid: when a move just finished, cut the cascade (motor free) for
+     * 5 s so the arm settles on its own, then resume normal idle hold. */
+    static uint8_t  dbg_prev_running = 0;
+    static uint32_t dbg_off_start    = 0;
+    static uint8_t  dbg_off          = 0;
+    if (dbg_prev_running && !traj_mgr.running)   /* running 1 -> 0 : just completed */
+    {
+        dbg_off       = 1;
+        dbg_off_start = HAL_GetTick();
+    }
+    dbg_prev_running = traj_mgr.running;
+
+    if (dbg_off)
+    {
+        if ((HAL_GetTick() - dbg_off_start) < 5000U)
+        {
+            PWM(0.0f, 0.0f);   /* cascade OFF — motor coasts */
+            vout = 0.0f;
+            return;            /* skip cascade + drive for this tick */
+        }
+        dbg_off = 0;           /* 5 s elapsed — resume control */
+    }
+#endif
 
     /* ================================================================
      * 6. Trajectory + Cascade
@@ -1021,9 +1095,15 @@ void Robot_Period_Control_Loop(void)
         CASCADE_Compute(&Controller, sys_state.cur_pos, 0.0f);
     }
 
+    if(fabs(Kalman.X[1]) < 0.005 && actual_vin < 0.61){moving = 0;}
+    else if(fabs(Kalman.X[1]) >= 0.04  && actual_vin > 0.8){moving = 1;}
+    if(moving == 0){friction_feedforward = static_friction_ff;}
+    if(moving == 1){friction_feedforward = dynamic_friction_ff;}
+
     /* 7. Drive motor */
     vout = Controller.voltage_output;
-    PWM(vout, 0.4f);   /* 0.5 V offset = static-friction compensation */
+    actual_vin = fabs(vout)+friction_feedforward;
+    PWM(vout, friction_feedforward);   /* 0.5 V offset = static-friction compensation */
 }
 /* USER CODE END 4 */
 

@@ -101,9 +101,24 @@ void SYSTEM_STATE_Encoder_Compute(Encoder *encoder)
 
 void PWM(float32_t voltage, float32_t direct_add)
 {
+    /* Voltage dead-band: when the controller is barely commanding anything,
+     * the sign of `voltage` flips with position noise. Adding the friction-comp
+     * offset (direct_add) in that flipping direction causes the motor to buzz /
+     * oscillate at the setpoint. Below this threshold, hold the motor OFF and
+     * skip the friction kick. Raise it if it still hunts, lower it if it stops
+     * short of target. */
+    const float32_t PWM_VOLTAGE_DEADBAND = 0.20f;   /* volts */
+
     /* Clamp to rail limits */
     if      (voltage >  VOLTAGE_MAX) voltage =  VOLTAGE_MAX;
     else if (voltage < -VOLTAGE_MAX) voltage = -VOLTAGE_MAX;
+
+    float32_t vmag = (voltage < 0.0f) ? -voltage : voltage;
+    if (vmag < PWM_VOLTAGE_DEADBAND)
+    {
+        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);   /* motor off — no friction kick */
+        return;
+    }
 
     /* Direction */
     if (voltage >= 0.0f)
@@ -136,31 +151,31 @@ void SYSTEM_STATE_Homing(Proximity *prox)
             if (prox->proximity_flag == 1)
             {
                 prox->first_detect = prox->instant_detect;
-                
+
                 // Command the motor to reverse aggressively
-                prox->vout = -5.0;
-                
+                prox->vout = 3.0;
+
                 // Record the exact millisecond we started backing off
-                backoff_start_time = HAL_GetTick(); 
-                
+                backoff_start_time = HAL_GetTick();
+
                 // Advance to the new non-blocking "wait" state
-                prox->state_detection = 99; 
+                prox->state_detection = 99;
             }
             break;
 
         case 99:
             /* This is the Non-Blocking Timestamp State */
-            prox->vout = -5.0;
+            prox->vout = 3.0;
 
 
             // Check if 500 milliseconds have passed since we recorded the start time
-            if ((HAL_GetTick() - backoff_start_time) >= 2500)
+            if ((HAL_GetTick() - backoff_start_time) >= 750)
             {
                 // Time is up! Clear the interrupt flag so we don't double-trigger
-                prox->proximity_flag = 0; 
-                
+                prox->proximity_flag = 0;
+
                 // Advance to the next real scan phase
-                prox->state_detection = 1; 
+                prox->state_detection = 1;
             }
             break;
 
@@ -174,11 +189,11 @@ void SYSTEM_STATE_Homing(Proximity *prox)
                 prox->proximity_flag = 0;
             }
             break;
-        
+
         case 2: // Using an explicit case 2 is safer than 'default'
             // Calculate center
-            prox->diff_detect = (ENCODER_COUNTS_PER_REV+(prox->first_detect - prox->second_detect))/2;
-            prox->reference_counter = Encoderhome - prox->diff_detect;
+            prox->diff_detect = (prox->first_detect - prox->second_detect)/2;
+            prox->reference_counter = Encoderhome - prox->diff_detect - 40;
             prox->flag_ready = 1;
             __HAL_TIM_SET_COUNTER(&htim3,prox->reference_counter);
             prox->vout = 0.0;
@@ -190,6 +205,10 @@ void SYSTEM_STATE_Homing(Proximity *prox)
     }
 }
 
-float32_t convert_degree2rad(float32_t Deg){
+float32_t SYSTEM_STATE_convert_degree2rad(float32_t Deg){
     return Deg*0.0174533f;
 }
+float32_t SYSTEM_STATE_convert_rad2degree(float32_t rad){
+    return rad*57.2958f;
+}
+

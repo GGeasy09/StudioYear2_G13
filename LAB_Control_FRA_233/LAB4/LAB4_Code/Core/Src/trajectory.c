@@ -1,8 +1,22 @@
 #include "trajectory.h"
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846f
+#endif
+
 /* Helper to prevent dangerous divisions by zero */
 static inline float32_t safe_time(float32_t t) {
     return (t < 0.0001f) ? 0.0001f : t;
+}
+
+/* ---- Small math helpers used by the trajectory manager ---- */
+static inline float32_t deg2rad(float32_t deg) { return deg * (M_PI / 180.0f); }
+static inline float32_t rad2deg(float32_t rad) { return rad * (180.0f / M_PI); }
+static inline float32_t clampf_t(float32_t x, float32_t lo, float32_t hi)
+{
+    if (x < lo) return lo;
+    if (x > hi) return hi;
+    return x;
 }
 
 /* =========================================================================
@@ -11,7 +25,7 @@ static inline float32_t safe_time(float32_t t) {
 
 void TRAJ_State_Init(Traj_State_t *traj, TIM_HandleTypeDef *Timer){
     traj->cloak = Timer;
-}    
+}
 
 void TRAJ_Trapezoidal_Plan(Traj_Trapezoidal_t *traj, float32_t start, float32_t setpoint, float32_t t_overall, float32_t t_accel) 
 {
@@ -88,6 +102,7 @@ Traj_State_t TRAJ_Trapezoidal_Compute(const Traj_Trapezoidal_t *traj, float32_t 
     out.pos   = traj->start_pos + (traj->sign * pos_abs);
     out.velo  = traj->sign * vel_abs;
     out.accel = traj->sign * acc_abs;
+    out.Complete = 0;
     return out;
 }
 
@@ -124,8 +139,9 @@ void TRAJ_SCurveLimits_Plan(Traj_SCurveLimits_t *traj, float32_t start, float32_
     /* Time at flat acceleration */
     float32_t t_a = (v_max_local / a_max_local) - t_j;
     
-    /* Distance required to reach v_max_local */
-    float32_t dist_accel = t_j * a_max_local * (t_j + t_a); // Total distance for accel + decel phases
+    /* Distance required to reach v_max_local (accel + decel phases).
+     * Each side covers v_max*(2*t_j + t_a)/2, so both sides = v_max*(2*t_j + t_a). */
+    float32_t dist_accel = v_max_local * (2.0f * t_j + t_a);
 
     /* Pass 2: Check if max velocity can be reached given the overall distance */
     if (delta < dist_accel) {
@@ -209,7 +225,7 @@ Traj_State_t TRAJ_SCurveLimits_Compute(const Traj_SCurveLimits_t *traj, float32_
     /* 4. Constant Velocity */
     else if (t < T4) {
         float32_t dt = t - T3;
-        float32_t dist_accel = traj->v_max * (tj + ta) * 0.5f; // Symmetric geometry area
+        float32_t dist_accel = traj->v_max * (2.0f * tj + ta) * 0.5f; // accel-phase distance
         a = 0.0f;
         v = traj->v_max;
         p = dist_accel + (v * dt);
@@ -247,6 +263,7 @@ Traj_State_t TRAJ_SCurveLimits_Compute(const Traj_SCurveLimits_t *traj, float32_
     out.pos   = traj->start_pos + (traj->sign * p);
     out.velo  = traj->sign * v;
     out.accel = traj->sign * a;
+    out.Complete = 0;
     return out;
 }
 
@@ -294,6 +311,7 @@ Traj_State_t TRAJ_MinJerk_Compute(const Traj_MinJerk_t *traj, float32_t t)
     out.pos   = traj->start_pos + traj->delta_q * ((10.0f * tau3) - (15.0f * tau4) + (6.0f * tau5));
     out.velo  = traj->delta_q * inv_T  * ((30.0f * tau2) - (60.0f * tau3) + (30.0f * tau4));
     out.accel = traj->delta_q * inv_T2 * ((60.0f * tau)  - (180.0f * tau2) + (120.0f * tau3));
+    out.Complete = 0;
 
     return out;
 }
@@ -354,4 +372,148 @@ Traj_State_t TRAJ_MinJerk_Vlim_Compute(const Traj_MinJerk_Vlim_t *traj, float32_
     out.Complete = 0;
 
     return out;
+}
+
+/* =========================================================================
+ * TRAJECTORY MANAGER IMPLEMENTATION
+ * ========================================================================= */
+
+/* Dynamic-time tuning for min-jerk moves */
+#define TRAJ_DYN_SPEED_DEG_S  110.0f   /* nominal cruise speed (deg/s) */
+#define TRAJ_DYN_T_MIN        0.9f     /* clamp: shortest allowed move (s) */
+#define TRAJ_DYN_T_MAX        3.5f     /* clamp: longest allowed move (s) */
+
+void TrajManager_Init(TrajManager *mgr, TIM_HandleTypeDef *htim)
+{
+    TRAJ_State_Init(&mgr->state, htim);
+    mgr->state.Complete = 1;
+    mgr->profile        = TRAJ_PROFILE_MINJERK;
+    mgr->elapsed        = 0.0f;
+    mgr->running        = 0;
+    mgr->cur_pos_rad    = 0.0f;
+
+    /* Pre-arm all planners with safe zero-move defaults */
+    TRAJ_MinJerk_Plan      (&mgr->min_jerk,      0.0f, 0.0f, 1.0f);
+    TRAJ_MinJerk_Vlim_Plan (&mgr->min_jerk_vlim, 0.0f, 0.0f, 0.5f);
+    TRAJ_Trapezoidal_Plan  (&mgr->trapezoid,     0.0f, 0.0f, 1.0f, 0.3f);
+    TRAJ_SCurveLimits_Plan (&mgr->scurve,        0.0f, 0.0f, 0.5f, 2.0f, 10.0f);
+}
+
+float32_t TrajManager_DynTime(float32_t target_deg, float32_t current_rad)
+{
+    float32_t dist = fabsf(target_deg - rad2deg(current_rad));
+    return clampf_t(dist / TRAJ_DYN_SPEED_DEG_S, TRAJ_DYN_T_MIN, TRAJ_DYN_T_MAX);
+}
+
+void TrajManager_Plan(TrajManager *mgr, int profile,
+                      float32_t target_deg,
+                      float32_t p1, float32_t p2, float32_t p3,
+                      float32_t current_rad)
+{
+    float32_t start  = current_rad;
+    float32_t target = deg2rad(target_deg);
+
+    /* Substitute sane defaults for unspecified parameters */
+    if (p1 < 0.001f) p1 = 0.5f;
+    if (p2 < 0.001f) p2 = 2.0f;
+    if (p3 < 0.001f) p3 = 10.0f;
+
+    mgr->profile = profile;
+
+    switch (profile)
+    {
+        default:
+        case TRAJ_PROFILE_MINJERK:
+            TRAJ_MinJerk_Plan(&mgr->min_jerk, start, target, p1);
+            break;
+        case TRAJ_PROFILE_MINJERK_VLIM:
+            TRAJ_MinJerk_Vlim_Plan(&mgr->min_jerk_vlim, start, target, p1);
+            break;
+        case TRAJ_PROFILE_TRAPEZOID:
+            TRAJ_Trapezoidal_Plan(&mgr->trapezoid, start, target, p1, p2);
+            break;
+        case TRAJ_PROFILE_SCURVE:
+            TRAJ_SCurveLimits_Plan(&mgr->scurve, start, target, p1, p2, p3);
+            break;
+        case TRAJ_PROFILE_MINSNAP:
+            TRAJ_MinSnap_Plan(&mgr->min_snap, start, target, p1);
+            break;
+    }
+
+    mgr->elapsed        = 0.0f;
+    mgr->state.Complete = 0;
+    mgr->running        = 1;
+    mgr->cur_pos_rad    = target;
+}
+
+Traj_State_t TrajManager_Step(TrajManager *mgr)
+{
+    /* If not running, return last latched state — prevents elapsed from
+     * growing unbounded and compute functions from extrapolating. */
+    if (!mgr->running)
+        return mgr->state;
+
+    mgr->elapsed += 0.0005f;   /* 2 kHz inner loop period */
+
+    Traj_State_t ref;
+    switch (mgr->profile)
+    {
+        default:
+        case TRAJ_PROFILE_MINJERK:
+            ref = TRAJ_MinJerk_Compute     (&mgr->min_jerk,      mgr->elapsed); break;
+        case TRAJ_PROFILE_MINJERK_VLIM:
+            ref = TRAJ_MinJerk_Vlim_Compute(&mgr->min_jerk_vlim, mgr->elapsed); break;
+        case TRAJ_PROFILE_TRAPEZOID:
+            ref = TRAJ_Trapezoidal_Compute (&mgr->trapezoid,     mgr->elapsed); break;
+        case TRAJ_PROFILE_SCURVE:
+            ref = TRAJ_SCurveLimits_Compute(&mgr->scurve,        mgr->elapsed); break;
+        case TRAJ_PROFILE_MINSNAP:
+            ref = TRAJ_MinSnap_Compute     (&mgr->min_snap,       mgr->elapsed); break;
+    }
+
+    if (ref.Complete)
+    {
+        mgr->state.Complete = 1;
+        mgr->running = 0;
+    }
+    else
+    {
+        mgr->state = ref;
+    }
+    return mgr->state;
+}
+
+/* =========================================================================
+ * MINIMUM SNAP — 7th-order polynomial
+ * x(τ) = Δ·(35τ⁴ − 84τ⁵ + 70τ⁶ − 20τ⁷)
+ * ========================================================================= */
+void TRAJ_MinSnap_Plan(Traj_MinSnap_t *traj, float32_t start, float32_t setpoint, float32_t T)
+{
+    traj->start_pos    = start;
+    traj->setpoint_pos = setpoint;
+    traj->T            = (T > 0.001f) ? T : 0.001f;
+}
+
+Traj_State_t TRAJ_MinSnap_Compute(Traj_MinSnap_t *traj, float32_t elapsed)
+{
+    Traj_State_t s = {0};
+    float32_t dp = traj->setpoint_pos - traj->start_pos;
+    float32_t T  = traj->T;
+
+    if (elapsed >= T) {
+        s.pos      = traj->setpoint_pos;
+        s.velo     = 0.0f;
+        s.accel    = 0.0f;
+        s.Complete = 1;
+        return s;
+    }
+
+    float32_t tau = elapsed / T;
+    float32_t t2=tau*tau, t3=t2*tau, t4=t3*tau, t5=t4*tau, t6=t5*tau, t7=t6*tau;
+
+    s.pos   = traj->start_pos + dp * (35*t4 - 84*t5 + 70*t6 - 20*t7);
+    s.velo  = (dp/T)     * (140*t3 - 420*t4 + 420*t5 - 140*t6);
+    s.accel = (dp/(T*T)) * (420*t2 - 1680*t3 + 2100*t4 - 840*t5);
+    s.Complete = 0;
+    return s;
 }

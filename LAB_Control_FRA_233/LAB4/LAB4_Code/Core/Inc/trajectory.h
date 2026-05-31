@@ -98,4 +98,66 @@ typedef struct {
 void TRAJ_MinJerk_Vlim_Plan(Traj_MinJerk_Vlim_t *traj, float32_t start, float32_t setpoint, float32_t v_max);
 Traj_State_t TRAJ_MinJerk_Vlim_Compute(const Traj_MinJerk_Vlim_t *traj, float32_t t);
 
+/* =========================================================================
+ * TRAJECTORY MANAGER — owns all planners plus the active profile/state.
+ * Provides a single high-level API used by the main control code.
+ * ========================================================================= */
+/* =========================================================================
+ * MINIMUM SNAP — 7th-order polynomial
+ *   x(τ) = Δ·(35τ⁴ − 84τ⁵ + 70τ⁶ − 20τ⁷),  τ = t/T
+ * Zero boundary conditions on pos, vel, accel, jerk at both ends.
+ * p1 = T (total duration, seconds)
+ * ========================================================================= */
+typedef struct {
+    float32_t start_pos;
+    float32_t setpoint_pos;
+    float32_t T;
+} Traj_MinSnap_t;
+
+void         TRAJ_MinSnap_Plan   (Traj_MinSnap_t *traj, float32_t start, float32_t setpoint, float32_t T);
+Traj_State_t TRAJ_MinSnap_Compute(Traj_MinSnap_t *traj, float32_t elapsed);
+
+typedef enum {
+    TRAJ_PROFILE_MINJERK      = 0,
+    TRAJ_PROFILE_MINJERK_VLIM = 1,
+    TRAJ_PROFILE_TRAPEZOID    = 2,
+    TRAJ_PROFILE_SCURVE       = 3,
+    TRAJ_PROFILE_MINSNAP      = 4
+} TrajProfile;
+
+typedef struct {
+    /* Planners (one per profile) */
+    Traj_MinJerk_t      min_jerk;
+    Traj_MinJerk_Vlim_t min_jerk_vlim;
+    Traj_Trapezoidal_t  trapezoid;
+    Traj_SCurveLimits_t scurve;
+    Traj_MinSnap_t      min_snap;
+
+    /* Active state */
+    Traj_State_t        state;        /* last computed reference (+ Complete flag) */
+    int                 profile;      /* active profile (TrajProfile) */
+    float32_t           elapsed;      /* time since plan armed (s) */
+    int                 running;      /* 1 = trajectory active */
+    float32_t           cur_pos_rad;  /* latched target position (rad) */
+} TrajManager;
+
+/* Initialise the manager, bind the timing source, pre-arm all planners. */
+void TrajManager_Init(TrajManager *mgr, TIM_HandleTypeDef *htim);
+
+/* Distance-based duration helper for min-jerk moves.
+ * Returns time (s) = clamp(|target_deg - rad2deg(current_rad)| / speed, Tmin, Tmax). */
+float32_t TrajManager_DynTime(float32_t target_deg, float32_t current_rad);
+
+/* Plan and arm a move from current_rad to target_deg using the given profile.
+ *   p1 = v_max / t_total   (profile dependent)
+ *   p2 = accel_time / a_max (Trapezoid / S-Curve)
+ *   p3 = j_max              (S-Curve only) */
+void TrajManager_Plan(TrajManager *mgr, int profile,
+                      float32_t target_deg,
+                      float32_t p1, float32_t p2, float32_t p3,
+                      float32_t current_rad);
+
+/* Advance the active trajectory by one control period and return the reference. */
+Traj_State_t TrajManager_Step(TrajManager *mgr);
+
 #endif /* TRAJECTORY_H */

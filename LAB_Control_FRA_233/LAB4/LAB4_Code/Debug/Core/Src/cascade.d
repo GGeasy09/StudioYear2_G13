@@ -1,9 +1,9 @@
 Core/Src/cascade.o: ../Core/Src/cascade.c ../Core/Inc/cascade.h \
  ../Middlewares/Third_Party/ARM_CMSIS/CMSIS/DSP/Include/arm_math.h \
  ../Drivers/CMSIS/Include/cmsis_compiler.h \
- ../Drivers/CMSIS/Include/cmsis_gcc.h ../Core/Inc/kalman.h \
- ../Core/Inc/trajectory.h ../Core/Inc/tim.h ../Core/Inc/main.h \
- ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h \
+ ../Drivers/CMSIS/Include/cmsis_gcc.h ../Core/Inc/motor_params.h \
+ ../Core/Inc/kalman.h ../Core/Inc/trajectory.h ../Core/Inc/tim.h \
+ ../Core/Inc/main.h ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h \
  ../Core/Inc/stm32g4xx_hal_conf.h \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_rcc.h \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_def.h \
@@ -36,6 +36,7 @@ Core/Src/cascade.o: ../Core/Src/cascade.c ../Core/Inc/cascade.h \
 ../Middlewares/Third_Party/ARM_CMSIS/CMSIS/DSP/Include/arm_math.h:
 ../Drivers/CMSIS/Include/cmsis_compiler.h:
 ../Drivers/CMSIS/Include/cmsis_gcc.h:
+../Core/Inc/motor_params.h:
 ../Core/Inc/kalman.h:
 ../Core/Inc/trajectory.h:
 ../Core/Inc/tim.h:
