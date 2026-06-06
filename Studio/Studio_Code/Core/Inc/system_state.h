@@ -53,6 +53,10 @@ void SYSTEM_STATE_Encoder_Init(TIM_HandleTypeDef *htim_clk, TIM_HandleTypeDef *h
 void SYSTEM_STATE_Encoder_Compute(Encoder *encoder);
 void PWM(float32_t voltage, float32_t direct_add);
 
+/* Signed voltage PWM() actually applied last call (control + friction, after
+ * clamp and off-floor). Feed THIS to the Kalman filter as the true input u. */
+extern float32_t vout_applied;
+
 typedef struct
 {
     uint16_t instant_detect;

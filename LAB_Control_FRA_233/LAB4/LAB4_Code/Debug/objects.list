@@ -1,4 +1,5 @@
 "./Core/Src/BaseSystem.o"
+"./Core/Src/LAB_Manager.o"
 "./Core/Src/cascade.o"
 "./Core/Src/dma.o"
 "./Core/Src/elec_cabient.o"

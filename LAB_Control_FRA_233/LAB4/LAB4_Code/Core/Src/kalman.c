@@ -33,12 +33,18 @@ void KALMAN_Multi_Model_Init(KALMAN_Multi_Model_Params* params,
     };
     for (i = 0; i < STATE_SIZE * STATE_SIZE; i++) { params->F[i] = F_init[i]; }
 
-    /* --- Q: process noise covariance  [4 x 4] --- */
+    /* --- Q: process noise covariance  [4 x 4] — DIAGONAL, two independent knobs ---
+     *   Q[1][1] = process_noise     -> velocity state. RAISE to track faster / cut lag.
+     *   Q[2][2] = disturbance_noise -> disturbance state. LOWER to keep it smooth/stable.
+     *   These were previously coupled to a single scalar (and disturbance_noise was
+     *   ignored), which made one knob fight itself. Now they are separate. NOTE: the
+     *   numeric scale of process_noise changed (the old J/FREQ scaling is gone), so
+     *   retune from a small value upward. */
     float32_t Q_init[STATE_SIZE * STATE_SIZE] = {
-        0.0f,  0.0f,                                                                              0.0f,             0.0f,
-        0.0f,  KALMAN_FREQ * KALMAN_FREQ / parameter->J / parameter->J * process_noise,  -KALMAN_FREQ / parameter->J * process_noise,  0.0f,
-        0.0f,  -KALMAN_FREQ / parameter->J * process_noise,                               process_noise,    0.0f,
-        0.0f,  0.0f,                                                                              0.0f,             0.0f
+        0.0f,  0.0f,             0.0f,               0.0f,
+        0.0f,  process_noise,    0.0f,               0.0f,
+        0.0f,  0.0f,             disturbance_noise,  0.0f,
+        0.0f,  0.0f,             0.0f,               0.0f
     };
     for (i = 0; i < STATE_SIZE * STATE_SIZE; i++) { params->Q[i] = Q_init[i]; }
 

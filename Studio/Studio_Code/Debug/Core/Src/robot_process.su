@@ -1,0 +1,13 @@
+../Core/Src/robot_process.c:34:13:TRAJ_Plan	32	static
+../Core/Src/robot_process.c:58:18:Seq_SlotToTarget	32	static
+../Core/Src/robot_process.c:79:13:Robot_State_Homing	8	static
+../Core/Src/robot_process.c:107:13:Robot_State_Waiting	24	static
+../Core/Src/robot_process.c:209:13:Robot_Running_Sequence	40	static
+../Core/Src/robot_process.c:346:13:Robot_Running_BaseSystem	80	static
+../Core/Src/robot_process.c:545:16:Robot_HandleEmergency	16	static
+../Core/Src/robot_process.c:581:16:Robot_HandleSoftStop	16	static
+../Core/Src/robot_process.c:599:13:Robot_UpdateTrustMode	16	static
+../Core/Src/robot_process.c:608:16:Robot_HandleHomeIntercept	16	static
+../Core/Src/robot_process.c:631:13:Robot_HandleGripper	8	static
+../Core/Src/robot_process.c:688:13:Robot_HandleColorHold	16	static
+../Core/Src/robot_process.c:719:6:Robot_State_Process	8	static

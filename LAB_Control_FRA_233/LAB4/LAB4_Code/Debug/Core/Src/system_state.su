@@ -1,6 +1,9 @@
-../Core/Src/system_state.c:32:6:SYSTEM_STATE_Encoder_Init	24	static
-../Core/Src/system_state.c:37:6:SYSTEM_STATE_Encoder_Compute	40	static
-../Core/Src/system_state.c:102:6:PWM	32	static
-../Core/Src/system_state.c:141:6:SYSTEM_STATE_Homing	16	static
-../Core/Src/system_state.c:208:11:SYSTEM_STATE_convert_degree2rad	16	static
-../Core/Src/system_state.c:211:11:SYSTEM_STATE_convert_rad2degree	16	static
+../Core/Src/system_state.c:36:6:SYSTEM_STATE_Encoder_Init	24	static
+../Core/Src/system_state.c:44:6:SYSTEM_STATE_Init	24	static
+../Core/Src/system_state.c:80:9:SYSTEM_STATE_HomingStep	24	static
+../Core/Src/system_state.c:120:6:SYSTEM_STATE_SetHomeHere	24	static
+../Core/Src/system_state.c:146:6:SYSTEM_STATE_Encoder_Compute	40	static
+../Core/Src/system_state.c:218:6:PWM	32	static
+../Core/Src/system_state.c:256:6:SYSTEM_STATE_Homing	16	static
+../Core/Src/system_state.c:323:11:SYSTEM_STATE_convert_degree2rad	16	static
+../Core/Src/system_state.c:326:11:SYSTEM_STATE_convert_rad2degree	16	static

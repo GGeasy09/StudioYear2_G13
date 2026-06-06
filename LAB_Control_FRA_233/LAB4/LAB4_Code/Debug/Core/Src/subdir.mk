@@ -6,6 +6,7 @@
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
 ../Core/Src/BaseSystem.c \
+../Core/Src/LAB_Manager.c \
 ../Core/Src/cascade.c \
 ../Core/Src/dma.c \
 ../Core/Src/elec_cabient.c \
@@ -25,6 +26,7 @@ C_SRCS += \
 
 OBJS += \
 ./Core/Src/BaseSystem.o \
+./Core/Src/LAB_Manager.o \
 ./Core/Src/cascade.o \
 ./Core/Src/dma.o \
 ./Core/Src/elec_cabient.o \
@@ -44,6 +46,7 @@ OBJS += \
 
 C_DEPS += \
 ./Core/Src/BaseSystem.d \
+./Core/Src/LAB_Manager.d \
 ./Core/Src/cascade.d \
 ./Core/Src/dma.d \
 ./Core/Src/elec_cabient.d \
@@ -69,7 +72,7 @@ Core/Src/%.o Core/Src/%.su Core/Src/%.cyclo: ../Core/Src/%.c Core/Src/subdir.mk
 clean: clean-Core-2f-Src
 
 clean-Core-2f-Src:
-	-$(RM) ./Core/Src/BaseSystem.cyclo ./Core/Src/BaseSystem.d ./Core/Src/BaseSystem.o ./Core/Src/BaseSystem.su ./Core/Src/cascade.cyclo ./Core/Src/cascade.d ./Core/Src/cascade.o ./Core/Src/cascade.su ./Core/Src/dma.cyclo ./Core/Src/dma.d ./Core/Src/dma.o ./Core/Src/dma.su ./Core/Src/elec_cabient.cyclo ./Core/Src/elec_cabient.d ./Core/Src/elec_cabient.o ./Core/Src/elec_cabient.su ./Core/Src/fdcan.cyclo ./Core/Src/fdcan.d ./Core/Src/fdcan.o ./Core/Src/fdcan.su ./Core/Src/gpio.cyclo ./Core/Src/gpio.d ./Core/Src/gpio.o ./Core/Src/gpio.su ./Core/Src/kalman.cyclo ./Core/Src/kalman.d ./Core/Src/kalman.o ./Core/Src/kalman.su ./Core/Src/main.cyclo ./Core/Src/main.d ./Core/Src/main.o ./Core/Src/main.su ./Core/Src/stm32g4xx_hal_msp.cyclo ./Core/Src/stm32g4xx_hal_msp.d ./Core/Src/stm32g4xx_hal_msp.o ./Core/Src/stm32g4xx_hal_msp.su ./Core/Src/stm32g4xx_it.cyclo ./Core/Src/stm32g4xx_it.d ./Core/Src/stm32g4xx_it.o ./Core/Src/stm32g4xx_it.su ./Core/Src/syscalls.cyclo ./Core/Src/syscalls.d ./Core/Src/syscalls.o ./Core/Src/syscalls.su ./Core/Src/sysmem.cyclo ./Core/Src/sysmem.d ./Core/Src/sysmem.o ./Core/Src/sysmem.su ./Core/Src/system_state.cyclo ./Core/Src/system_state.d ./Core/Src/system_state.o ./Core/Src/system_state.su ./Core/Src/system_stm32g4xx.cyclo ./Core/Src/system_stm32g4xx.d ./Core/Src/system_stm32g4xx.o ./Core/Src/system_stm32g4xx.su ./Core/Src/tim.cyclo ./Core/Src/tim.d ./Core/Src/tim.o ./Core/Src/tim.su ./Core/Src/trajectory.cyclo ./Core/Src/trajectory.d ./Core/Src/trajectory.o ./Core/Src/trajectory.su ./Core/Src/usart.cyclo ./Core/Src/usart.d ./Core/Src/usart.o ./Core/Src/usart.su
+	-$(RM) ./Core/Src/BaseSystem.cyclo ./Core/Src/BaseSystem.d ./Core/Src/BaseSystem.o ./Core/Src/BaseSystem.su ./Core/Src/LAB_Manager.cyclo ./Core/Src/LAB_Manager.d ./Core/Src/LAB_Manager.o ./Core/Src/LAB_Manager.su ./Core/Src/cascade.cyclo ./Core/Src/cascade.d ./Core/Src/cascade.o ./Core/Src/cascade.su ./Core/Src/dma.cyclo ./Core/Src/dma.d ./Core/Src/dma.o ./Core/Src/dma.su ./Core/Src/elec_cabient.cyclo ./Core/Src/elec_cabient.d ./Core/Src/elec_cabient.o ./Core/Src/elec_cabient.su ./Core/Src/fdcan.cyclo ./Core/Src/fdcan.d ./Core/Src/fdcan.o ./Core/Src/fdcan.su ./Core/Src/gpio.cyclo ./Core/Src/gpio.d ./Core/Src/gpio.o ./Core/Src/gpio.su ./Core/Src/kalman.cyclo ./Core/Src/kalman.d ./Core/Src/kalman.o ./Core/Src/kalman.su ./Core/Src/main.cyclo ./Core/Src/main.d ./Core/Src/main.o ./Core/Src/main.su ./Core/Src/stm32g4xx_hal_msp.cyclo ./Core/Src/stm32g4xx_hal_msp.d ./Core/Src/stm32g4xx_hal_msp.o ./Core/Src/stm32g4xx_hal_msp.su ./Core/Src/stm32g4xx_it.cyclo ./Core/Src/stm32g4xx_it.d ./Core/Src/stm32g4xx_it.o ./Core/Src/stm32g4xx_it.su ./Core/Src/syscalls.cyclo ./Core/Src/syscalls.d ./Core/Src/syscalls.o ./Core/Src/syscalls.su ./Core/Src/sysmem.cyclo ./Core/Src/sysmem.d ./Core/Src/sysmem.o ./Core/Src/sysmem.su ./Core/Src/system_state.cyclo ./Core/Src/system_state.d ./Core/Src/system_state.o ./Core/Src/system_state.su ./Core/Src/system_stm32g4xx.cyclo ./Core/Src/system_stm32g4xx.d ./Core/Src/system_stm32g4xx.o ./Core/Src/system_stm32g4xx.su ./Core/Src/tim.cyclo ./Core/Src/tim.d ./Core/Src/tim.o ./Core/Src/tim.su ./Core/Src/trajectory.cyclo ./Core/Src/trajectory.d ./Core/Src/trajectory.o ./Core/Src/trajectory.su ./Core/Src/usart.cyclo ./Core/Src/usart.d ./Core/Src/usart.o ./Core/Src/usart.su
 
 .PHONY: clean-Core-2f-Src
 

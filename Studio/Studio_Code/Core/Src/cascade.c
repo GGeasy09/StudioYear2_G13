@@ -5,9 +5,10 @@
 #define VOLTAGE_MAX    12.0f
 
 /* Outer loop decimation ratio */
-#define OUTER_DECIMATE 10
+#define OUTER_DECIMATE 4
 #define BACKLASH_DEADBAND 0.05f
 #define TS 0.0005f
+#define VELO_INT_DEADBAND 0.05f   /* rad/s — while holding (|setpt| & |err| below this), bleed inner integral to kill stick-slip */
 
 /* -------------------------------------------------------------------------
  * Internal helper
@@ -27,29 +28,30 @@ void CASCADE_Feedforward_Init(MOTOR_PARAMS *motor, Feedforward *ff)
     const float32_t B   = motor->B;
     const float32_t R   = motor->R;
     const float32_t L   = motor->L;
-    const float32_t tau = motor->tau;   /* user-tunable LPF time-constant */
+    const float32_t tau_d = motor->tau_dist;  /* disturbance FF LPF (slow -> noise/loop stability) */
+    const float32_t tau_r = motor->tau_ref;   /* reference  FF LPF (fast -> low lag, clean input)  */
     const float32_t Ts  = TS;
 
     /* ------------------------------------------------------------------ */
-    /* Disturbance FF                                                      */
+    /* Disturbance FF  — uses tau_d (large / slow)                         */
     /* ------------------------------------------------------------------ */
-    float32_t D1       = kt * (tau + Ts);
-    ff->Ad1_be         = (kt * tau)     / D1;   /* y[k-1] */
+    float32_t D1       = kt * (tau_d + Ts);
+    ff->Ad1_be         = (kt * tau_d)  / D1;   /* y[k-1] */
     ff->Bd1_be[0]      = (L + R * Ts)  / D1;   /* u[k]   */
     ff->Bd1_be[1]      = -L            / D1;   /* u[k-1] */
 
     /* ------------------------------------------------------------------ */
-    /* Reference FF                                                        */
+    /* Reference FF  — uses tau_r (small / fast)                           */
     /* ------------------------------------------------------------------ */
-    float32_t tauTs    = tau + Ts;
+    float32_t tauTs    = tau_r + Ts;
     float32_t D2       = km * tauTs * tauTs;
 
     float32_t JL       = J * L;
     float32_t RJBL     = R * J + B * L;
     float32_t RBktKm   = R * B + kt * km;
 
-    ff->Ar2_be[0]      =  2.0f * km * tau * tauTs              / D2; /* y[k-1] */
-    ff->Ar2_be[1]      = -(km * tau * tau)                     / D2; /* y[k-2] */
+    ff->Ar2_be[0]      =  2.0f * km * tau_r * tauTs           / D2; /* y[k-1] */
+    ff->Ar2_be[1]      = -(km * tau_r * tau_r)                / D2; /* y[k-2] */
 
     ff->Br2_be[0]      = (JL + RJBL * Ts + RBktKm * Ts * Ts)  / D2; /* u[k]   */
     ff->Br2_be[1]      = (-2.0f * JL - RJBL * Ts)             / D2; /* u[k-1] */
@@ -132,7 +134,7 @@ void CASCADE_Controller_Compute_Position(PID *pid, float32_t setpoint, float32_t
     float32_t internal_ki = pid->ki;
     float32_t error  = setpoint - measured;
     float32_t p_term = pid->kp * error;
-    if(fabsf(error) < 0.1 && fabsf(error) >= 0.0017){
+    if(fabsf(error) < 0.5 && fabsf(error) >= 0.0018){
         internal_ki = 0.0f;
     }
     float32_t i_term = pid->integral + internal_ki * error * pid->dt;
@@ -146,7 +148,7 @@ void CASCADE_Controller_Compute_Position(PID *pid, float32_t setpoint, float32_t
 
     // /* Near-zero dead-zone: softly decay integral, do NOT corrupt prev_error */
     int integral_frozen = 0;
-    if (fabsf(error) < 0.0017f)
+    if (fabsf(error) < 0.0018f)
     {
         pid->integral  *= 0.75f;
         integral_frozen = 1;
@@ -178,10 +180,21 @@ void CASCADE_Controller_Compute_Velocity(PID *pid, float32_t setpoint, float32_t
 
     float32_t out = p_term + i_term + d_term;
 
+    /* Integral deadband: only while HOLDING (commanded velocity ~0 AND error tiny),
+     * bleed the integrator instead of accumulating. Stops it winding up against
+     * static friction and triggering stick-slip lurches at the setpoint. The
+     * setpoint gate keeps this inactive during trajectory moves. */
+    int integral_frozen = 0;
+    if (fabsf(setpoint) < VELO_INT_DEADBAND && fabsf(error) < VELO_INT_DEADBAND)
+    {
+        pid->integral *= 0.9f;
+        integral_frozen = 1;
+    }
+
     /* Anti-windup: conditional integration */
     float32_t out_clamped = clampf(out, pid->out_min, pid->out_max);
 
-  if (out == out_clamped )
+  if (out == out_clamped && !integral_frozen)
     {
         pid->integral = i_term;
     }
@@ -233,6 +246,53 @@ void CASCADE_Cascade_Start(Cascade* csc,PID* inner, PID* outer, Feedforward* ff,
 }
 
 /* =========================================================================
+ * CASCADE_Update — load this tick's state estimates / measurement into struct
+ * ======================================================================= */
+void CASCADE_Update(Cascade *csc, float32_t pos_state, float32_t velocity_state,
+                    float32_t current_state, float32_t disturbance_state, float32_t actual_pos)
+{
+    csc->pos_state         = pos_state;
+    csc->velocity_state    = velocity_state;
+    csc->current_state     = current_state;
+    csc->disturbance_state = disturbance_state;
+    csc->actual_pos        = actual_pos;
+}
+
+/* =========================================================================
+ * CASCADE_Friction_Init — set friction-comp levels and thresholds
+ * ======================================================================= */
+void CASCADE_Friction_Init(FrictionFF *f, float32_t static_ff, float32_t dynamic_ff,
+                           float32_t velo_thresh, float32_t pos_thresh)
+{
+    f->static_ff   = static_ff;
+    f->dynamic_ff  = dynamic_ff;
+    f->velo_thresh = velo_thresh;
+    f->pos_thresh  = pos_thresh;
+    f->output      = 0.0f;
+    f->moving      = 0;
+}
+
+/* =========================================================================
+ * CASCADE_Friction_Compute — signed, tanh-smoothed friction feedforward
+ *   Moving  : push in direction of velocity (cancels kinetic friction).
+ *   At rest : push in direction of position error (breaks stiction).
+ *   tanh() self-tapers to 0 near zero so the kick fades as the shaft settles.
+ * ======================================================================= */
+float32_t CASCADE_Friction_Compute(FrictionFF *f, float32_t velocity, float32_t pos_error)
+{
+    float32_t dir_move = tanhf(velocity  / f->velo_thresh);
+    float32_t dir_rest = tanhf(pos_error / f->pos_thresh);
+
+    float32_t move_w = fabsf(dir_move);
+    float32_t fc_mag = f->dynamic_ff
+                     + (f->static_ff - f->dynamic_ff) * (1.0f - move_w);
+
+    f->output = fc_mag * (move_w * dir_move + (1.0f - move_w) * dir_rest);
+    f->moving = (move_w > 0.5f);
+    return f->output;
+}
+
+/* =========================================================================
  * CASCADE_Compute  — call at inner-loop rate (2 kHz / 0.5 ms)
  * ======================================================================= */
 void CASCADE_Compute(Cascade   *csc,
@@ -261,7 +321,8 @@ void CASCADE_Compute(Cascade   *csc,
     CASCADE_Disturbance_Compute(csc);
 
 
-    if(fabs(csc->outer->error) < 0.005){
+    float32_t actual_error = (csc->pos_setpoint - csc->actual_pos)*57.2958f;
+    if(fabs(actual_error) < 0.1){
         csc->Kalman->X[2] *= 0.9f;
     }
     /* ---- Clamp disturbance FF to ±5 V before summing ---- */
@@ -269,11 +330,8 @@ void CASCADE_Compute(Cascade   *csc,
 
     /* ---- Sum and clamp ---- */
     csc->voltage_output = csc->inner->out
-                        + csc->feedforward->reference_value
-                        + csc->feedforward->disturbance_value;
-
-
-
+                        + csc->feedforward->reference_value;
+//                        + csc->feedforward->disturbance_value;
 
     csc->voltage_output = clampf(csc->voltage_output, -VOLTAGE_MAX, VOLTAGE_MAX);
 }

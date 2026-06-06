@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>LAB1 — Kalman Velocity Accuracy</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; padding: 18px; }
+
+h1 { font-size: 17px; font-weight: 600; color: #a0c4ff; margin-bottom: 4px; }
+.subtitle { font-size: 11px; color: #556080; margin-bottom: 16px; }
+
+/* Drop zone */
+.dropzone { border: 2px dashed #2d3f6e; border-radius: 12px; padding: 28px; text-align: center;
+  background: #16213e; margin-bottom: 16px; cursor: pointer; transition: border-color 0.2s; }
+.dropzone.over { border-color: #4f8ef7; background: #1a2a4a; }
+.dropzone.loaded { border-color: #3dbb6a; border-style: solid; }
+.dropzone .icon { font-size: 28px; margin-bottom: 8px; color: #2d3f6e; }
+.dropzone .dz-title { font-size: 14px; color: #9bb3d4; }
+.dropzone .dz-sub { font-size: 11px; color: #556080; margin-top: 4px; }
+.dropzone input[type=file] { display: none; }
+
+/* Controls */
+.controls { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+.ctrl-card { background: #16213e; border: 1px solid #2d3f6e; border-radius: 10px; padding: 12px 16px; flex: 1; min-width: 180px; }
+.ctrl-card h2 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #6a8fc8; margin-bottom: 10px; }
+.param-row { margin-bottom: 10px; }
+.param-row label { display: flex; justify-content: space-between; font-size: 12px; color: #9bb3d4; margin-bottom: 4px; }
+.param-row label span { color: #e8f0ff; font-weight: 600; font-size: 13px; }
+.param-row input[type=range] { width: 100%; accent-color: #4f8ef7; }
+.param-row .sub { font-size: 10px; color: #556080; margin-top: 2px; }
+
+/* Metrics */
+.metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+.metric-card { background: #16213e; border: 1px solid #2d3f6e; border-radius: 10px; padding: 10px 14px; }
+.metric-card .val { font-size: 22px; font-weight: 700; }
+.metric-card .lbl { font-size: 10px; color: #556080; margin-top: 2px; }
+.m-blue { color: #4f8ef7; }
+.m-green { color: #3dbb6a; }
+.m-red { color: #e05050; }
+.m-yellow { color: #f5c842; }
+.m-purple { color: #b47fff; }
+.m-teal { color: #3dd6c8; }
+
+/* Charts */
+.charts { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.chart-card { background: #16213e; border: 1px solid #2d3f6e; border-radius: 10px; padding: 12px 14px; }
+.chart-card h3 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #6a8fc8; margin-bottom: 8px; }
+
+.legend-row { display: flex; gap: 16px; margin-bottom: 6px; flex-wrap: wrap; }
+.leg { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #9bb3d4; }
+.leg-dot { width: 12px; height: 3px; border-radius: 2px; }
+
+.no-data { display: flex; align-items: center; justify-content: center; height: 120px; color: #556080; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<h1>LAB1 — Kalman Velocity Accuracy Analysis</h1>
+<p class="subtitle">Compare Kalman estimate X[1] against backward finite-difference of encoder position. Load CSV exported from LAB1_Export_CSV.m</p>
+
+<!-- Drop zone -->
+<div class="dropzone" id="dropzone">
+  <div class="icon">📂</div>
+  <div class="dz-title">Drop CSV file here or click to browse</div>
+  <div class="dz-sub">Expected columns: time, encoder_rad, Kv_velo</div>
+  <input type="file" id="fileInput" accept=".csv">
+</div>
+
+<!-- Controls -->
+<div class="controls">
+  <div class="ctrl-card">
+    <h2>Derivative Window</h2>
+    <div class="param-row">
+      <label>dt_window <span id="lbl_dtw">0.100</span> s</label>
+      <input type="range" id="dtw" min="0.001" max="0.500" step="0.001" value="0.100">
+      <div class="sub">Backward FD: v = Δpos / dt_window  (larger = smoother)</div>
+    </div>
+    <div class="param-row">
+      <label>Sample rate <span id="lbl_ts">0.0005</span> s</label>
+      <input type="range" id="tsamp" min="0.0001" max="0.005" step="0.0001" value="0.0005">
+      <div class="sub">Ts of data (2 kHz → 0.0005 s)</div>
+    </div>
+  </div>
+
+  <div class="ctrl-card">
+    <h2>View Window</h2>
+    <div class="param-row">
+      <label>t_start <span id="lbl_t0">0.00</span> s</label>
+      <input type="range" id="t0" min="0" max="30" step="0.1" value="0">
+      <div class="sub">Start of displayed window</div>
+    </div>
+    <div class="param-row">
+      <label>Window length <span id="lbl_twin">5.00</span> s</label>
+      <input type="range" id="twin" min="0.5" max="60" step="0.1" value="5">
+      <div class="sub">Duration to show</div>
+    </div>
+  </div>
+</div>
+
+<!-- Metrics -->
+<div class="metric-grid">
+  <div class="metric-card"><div class="val m-red" id="m_rms">—</div><div class="lbl">RMS error [rad/s]</div></div>
+  <div class="metric-card"><div class="val m-yellow" id="m_mae">—</div><div class="lbl">MAE [rad/s]</div></div>
+  <div class="metric-card"><div class="val m-red" id="m_max">—</div><div class="lbl">Max |error| [rad/s]</div></div>
+  <div class="metric-card"><div class="val m-teal" id="m_corr">—</div><div class="lbl">Correlation r</div></div>
+  <div class="metric-card"><div class="val m-blue" id="m_vpeak">—</div><div class="lbl">Peak |Kv_velo| [rad/s]</div></div>
+  <div class="metric-card"><div class="val m-green" id="m_samples">—</div><div class="lbl">Samples loaded</div></div>
+</div>
+
+<!-- Charts -->
+<div class="charts">
+  <div class="chart-card">
+    <h3>Position [rad]</h3>
+    <div style="position:relative; height:160px;"><canvas id="c_pos" role="img" aria-label="Encoder position over time"></canvas></div>
+  </div>
+
+  <div class="chart-card">
+    <h3>Velocity Comparison</h3>
+    <div class="legend-row">
+      <div class="leg"><div class="leg-dot" style="background:#4f8ef7;"></div> Kalman X[1]</div>
+      <div class="leg"><div class="leg-dot" style="background:#f5c842;"></div> Derivative (FD)</div>
+    </div>
+    <div style="position:relative; height:200px;"><canvas id="c_velo" role="img" aria-label="Kalman vs derivative velocity"></canvas></div>
+  </div>
+
+  <div class="chart-card">
+    <h3>Error: Kalman − Derivative [rad/s]</h3>
+    <div style="position:relative; height:160px;"><canvas id="c_err" role="img" aria-label="Velocity estimation error"></canvas></div>
+  </div>
+
+  <div class="chart-card">
+    <h3>Scatter: Kalman vs Derivative (in window)</h3>
+    <div style="position:relative; height:200px;"><canvas id="c_scatter" role="img" aria-label="Kalman vs derivative scatter"></canvas></div>
+  </div>
+</div>
+
+<script>
+// ---- State ----
+let rawTime = [], rawEnc = [], rawKv = [];
+let loaded = false;
+
+// ---- Chart defaults ----
+const GRID = { color: 'rgba(255,255,255,0.07)' };
+const TICK = { color: '#556080', font: { size: 10 } };
+const baseOpts = (xl, yl) => ({
+  responsive: true, maintainAspectRatio: false, animation: false,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { grid: GRID, ticks: { ...TICK, maxTicksLimit: 8 }, title: { display: true, text: xl, color: '#556080', font: { size: 10 } } },
+    y: { grid: GRID, ticks: { ...TICK, maxTicksLimit: 6 }, title: { display: true, text: yl, color: '#556080', font: { size: 10 } } }
+  }
+});
+
+const mkLine = (labels, data, color) => ({
+  labels,
+  datasets: [{ data, borderColor: color, pointRadius: 0, borderWidth: 1.5, tension: 0, fill: false }]
+});
+
+const mkMultiLine = (labels, datasets) => ({ labels, datasets });
+
+// ---- Create charts ----
+const cPos     = new Chart(document.getElementById('c_pos'),     { type: 'line', data: mkLine([], [], '#3dbb6a'), options: baseOpts('Time [s]', 'rad') });
+const cVelo    = new Chart(document.getElementById('c_velo'),    { type: 'line', data: mkMultiLine([], [
+    { label:'Kalman',     data: [], borderColor: '#4f8ef7', pointRadius: 0, borderWidth: 1.8, tension: 0, fill: false },
+    { label:'Derivative', data: [], borderColor: '#f5c842', pointRadius: 0, borderWidth: 1.5, tension: 0, fill: false }
+  ]), options: baseOpts('Time [s]', 'rad/s') });
+const cErr     = new Chart(document.getElementById('c_err'),     { type: 'line', data: mkLine([], [], '#e05050'), options: baseOpts('Time [s]', 'rad/s') });
+const cScatter = new Chart(document.getElementById('c_scatter'), {
+  type: 'scatter',
+  data: { datasets: [
+    { label: 'Kv vs FD', data: [], borderColor: '#b47fff', backgroundColor: 'rgba(180,127,255,0.3)', pointRadius: 1.5, borderWidth: 0 },
+    { label: 'y=x ideal', data: [], borderColor: 'rgba(255,255,255,0.25)', pointRadius: 0, borderWidth: 1, showLine: true, fill: false }
+  ]},
+  options: {
+    responsive: true, maintainAspectRatio: false, animation: false,
+    plugins: { legend: { display: true, labels: { color: '#9bb3d4', font: { size: 10 }, boxWidth: 10, pointStyle: 'circle' } } },
+    scales: {
+      x: { grid: GRID, ticks: TICK, title: { display: true, text: 'Derivative v [rad/s]', color: '#556080', font: { size: 10 } } },
+      y: { grid: GRID, ticks: TICK, title: { display: true, text: 'Kalman v [rad/s]', color: '#556080', font: { size: 10 } } }
+    }
+  }
+});
+
+// ---- Compute derivative ----
+function computeDerivative(pos, time, dt_window) {
+  const n = pos.length;
+  const v = new Array(n).fill(0);
+  let j = 0;
+  for (let i = 0; i < n; i++) {
+    const t_past = time[i] - dt_window;
+    while (j < i - 1 && time[j + 1] <= t_past) j++;
+    if (j < i) {
+      const dt_act = time[i] - time[j];
+      v[i] = dt_act > 0 ? (pos[i] - pos[j]) / dt_act : 0;
+    }
+  }
+  return v;
+}
+
+// ---- Metrics ----
+function calcMetrics(a, b) {
+  let rms = 0, mae = 0, maxE = 0, sumA = 0, sumB = 0, sumA2 = 0, sumB2 = 0, sumAB = 0;
+  const n = a.length;
+  for (let i = 0; i < n; i++) {
+    const e = a[i] - b[i];
+    rms  += e * e;
+    mae  += Math.abs(e);
+    if (Math.abs(e) > maxE) maxE = Math.abs(e);
+    sumA  += a[i]; sumB  += b[i];
+    sumA2 += a[i]*a[i]; sumB2 += b[i]*b[i]; sumAB += a[i]*b[i];
+  }
+  rms = Math.sqrt(rms / n);
+  mae /= n;
+  const meanA = sumA/n, meanB = sumB/n;
+  const stdA  = Math.sqrt(sumA2/n - meanA*meanA);
+  const stdB  = Math.sqrt(sumB2/n - meanB*meanB);
+  const corr  = stdA > 1e-9 && stdB > 1e-9 ? (sumAB/n - meanA*meanB) / (stdA * stdB) : 0;
+  return { rms, mae, maxE, corr };
+}
+
+// ---- Render ----
+function render() {
+  if (!loaded) return;
+
+  const dtw  = +document.getElementById('dtw').value;
+  const t0   = +document.getElementById('t0').value;
+  const twin = +document.getElementById('twin').value;
+  const t1   = t0 + twin;
+
+  // Window slice
+  const idx = rawTime.reduce((acc, t, i) => { if (t >= t0 && t <= t1) acc.push(i); return acc; }, []);
+  if (idx.length < 2) return;
+
+  const time = idx.map(i => rawTime[i]);
+  const enc  = idx.map(i => rawEnc[i]);
+  const kv   = idx.map(i => rawKv[i]);
+
+  // Derivative on full data, then slice
+  const allDeriv = computeDerivative(rawEnc, rawTime, dtw);
+  const deriv    = idx.map(i => allDeriv[i]);
+
+  // Downsample for chart performance (max 2000 points)
+  const MAX_PTS = 2000;
+  const step    = Math.max(1, Math.floor(time.length / MAX_PTS));
+  const ti      = time.filter((_,i) => i%step===0).map(v => v.toFixed(4));
+  const ei      = enc.filter((_,i)   => i%step===0);
+  const kvi     = kv.filter((_,i)    => i%step===0);
+  const di      = deriv.filter((_,i) => i%step===0);
+  const erri    = kvi.map((v,i) => v - di[i]);
+
+  // Metrics (full resolution)
+  const m = calcMetrics(kv, deriv);
+  const peakKv = Math.max(...kv.map(Math.abs));
+
+  document.getElementById('m_rms').textContent     = m.rms.toFixed(4);
+  document.getElementById('m_mae').textContent     = m.mae.toFixed(4);
+  document.getElementById('m_max').textContent     = m.maxE.toFixed(4);
+  document.getElementById('m_corr').textContent    = m.corr.toFixed(4);
+  document.getElementById('m_vpeak').textContent   = peakKv.toFixed(3);
+  document.getElementById('m_samples').textContent = rawTime.length.toLocaleString();
+
+  // Position
+  cPos.data = mkLine(ti, ei, '#3dbb6a');
+  cPos.update();
+
+  // Velocity
+  cVelo.data.labels = ti;
+  cVelo.data.datasets[0].data = kvi;
+  cVelo.data.datasets[1].data = di;
+  cVelo.update();
+
+  // Error
+  cErr.data = mkLine(ti, erri, '#e05050');
+  cErr.update();
+
+  // Scatter (max 800 pts for readability)
+  const sstep = Math.max(1, Math.floor(deriv.length / 800));
+  const sdata = deriv.filter((_,i)=>i%sstep===0).map((d,i) => ({ x: d, y: kv.filter((_,j)=>j%sstep===0)[i] }));
+  const vmin  = Math.min(...deriv, ...kv);
+  const vmax  = Math.max(...deriv, ...kv);
+  const ideal = [{ x: vmin, y: vmin }, { x: vmax, y: vmax }];
+  cScatter.data.datasets[0].data = sdata;
+  cScatter.data.datasets[1].data = ideal;
+  cScatter.update();
+}
+
+// ---- CSV Parser ----
+function parseCSV(text) {
+  const lines  = text.trim().split('\n');
+  const header = lines[0].toLowerCase().split(',').map(s => s.trim().replace(/"/g,''));
+  const iTime  = header.indexOf('time');
+  const iEnc   = header.indexOf('encoder_rad');
+  const iKv    = header.indexOf('kv_velo');
+  if (iTime < 0 || iEnc < 0 || iKv < 0) {
+    alert('CSV must have columns: time, encoder_rad, Kv_velo');
+    return false;
+  }
+  rawTime = []; rawEnc = []; rawKv = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const cols = lines[i].split(',');
+    rawTime.push(parseFloat(cols[iTime]));
+    rawEnc.push(parseFloat(cols[iEnc]));
+    rawKv.push(parseFloat(cols[iKv]));
+  }
+  return rawTime.length > 0;
+}
+
+function onFileLoaded(text, filename) {
+  if (!parseCSV(text)) return;
+  loaded = true;
+
+  const dz = document.getElementById('dropzone');
+  dz.classList.add('loaded');
+  dz.querySelector('.dz-title').textContent = '✓ ' + filename;
+  dz.querySelector('.dz-sub').textContent   = rawTime.length.toLocaleString() + ' samples  |  '
+    + rawTime[0].toFixed(3) + 's → ' + rawTime[rawTime.length-1].toFixed(3) + 's';
+
+  // Set t0 slider max
+  const tmax = rawTime[rawTime.length - 1];
+  document.getElementById('t0').max = tmax.toFixed(1);
+  document.getElementById('twin').max = tmax.toFixed(1);
+  document.getElementById('twin').value = Math.min(5, tmax).toFixed(1);
+  document.getElementById('lbl_twin').textContent = Math.min(5, tmax).toFixed(2);
+
+  render();
+}
+
+// ---- File input / drag-drop ----
+const dz   = document.getElementById('dropzone');
+const fi   = document.getElementById('fileInput');
+
+dz.addEventListener('click', () => fi.click());
+fi.addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => onFileLoaded(ev.target.result, f.name);
+  r.readAsText(f);
+});
+dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('over');
+  const f = e.dataTransfer.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => onFileLoaded(ev.target.result, f.name);
+  r.readAsText(f);
+});
+
+// ---- Slider listeners ----
+[['dtw','lbl_dtw',3],['tsamp','lbl_ts',4],['t0','lbl_t0',2],['twin','lbl_twin',2]].forEach(([id,lbl,dp]) => {
+  document.getElementById(id).addEventListener('input', e => {
+    document.getElementById(lbl).textContent = (+e.target.value).toFixed(dp);
+    render();
+  });
+});
+</script>
+</body>
+</html>

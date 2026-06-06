@@ -31,7 +31,8 @@ Core/Src/elec_cabient.o: ../Core/Src/elec_cabient.c \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim.h \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim_ex.h \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart.h \
- ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h
+ ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h \
+ ../Core/Inc/gripper_can.h ../Core/Inc/fdcan.h ../Core/Inc/elec_cabient.h
 ../Core/Inc/elec_cabient.h:
 ../Middlewares/Third_Party/ARM_CMSIS/CMSIS/DSP/Include/arm_math.h:
 ../Drivers/CMSIS/Include/cmsis_compiler.h:
@@ -67,3 +68,6 @@ Core/Src/elec_cabient.o: ../Core/Src/elec_cabient.c \
 ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_tim_ex.h:
 ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart.h:
 ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h:
+../Core/Inc/gripper_can.h:
+../Core/Inc/fdcan.h:
+../Core/Inc/elec_cabient.h:

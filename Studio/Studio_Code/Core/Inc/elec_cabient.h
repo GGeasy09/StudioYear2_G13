@@ -3,6 +3,15 @@
 #include <stdint.h>
 #include "arm_math.h" /* CMSIS-DSP Library */
 #include "gpio.h"
+
+/* ===========================================================================
+ * Gripper transport selection
+ *   0 = Direct GPIO (default, original behaviour)
+ *   1 = CAN bus via Protocol Spec v1.0.1 (gripper_can.h / gripper_can.c)
+ * =========================================================================*/
+#ifndef GRIPPER_USE_CAN
+#define GRIPPER_USE_CAN  1
+#endif
 typedef struct
 {
     /* --- Logical States (1 = Pressed, 0 = Released) --- */

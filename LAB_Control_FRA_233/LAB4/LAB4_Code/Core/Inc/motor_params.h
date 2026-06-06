@@ -13,7 +13,9 @@ typedef struct {
     float32_t B;    /* Viscous damping       [Nm·s/rad] */
     float32_t R;    /* Winding resistance    [Ω]        */
     float32_t L;    /* Winding inductance    [H]        */
-    float32_t tau;  /* FF filter time const  [s]        */
+    float32_t tau;      /* legacy FF filter time const (fallback) [s] */
+    float32_t tau_ref;  /* Reference FF LPF time const  [s] — small/fast (clean trajectory input) */
+    float32_t tau_dist; /* Disturbance FF LPF time const [s] — large/slow (noisy estimate, in-loop) */
 } MOTOR_PARAMS;
 
 #endif /* MOTOR_PARAMS_H */

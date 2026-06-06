@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>LAB3 — Trapezoid Profile Simulator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; padding: 18px; }
+
+  h1 { font-size: 17px; font-weight: 600; color: #a0c4ff; letter-spacing: 0.5px; margin-bottom: 14px; }
+
+  .top { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+
+  .params { background: #16213e; border: 1px solid #2d3f6e; border-radius: 10px; padding: 14px 16px; min-width: 230px; flex: 0 0 auto; }
+  .params h2 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #6a8fc8; margin-bottom: 12px; }
+
+  .param-row { margin-bottom: 12px; }
+  .param-row label { display: flex; justify-content: space-between; font-size: 12px; color: #9bb3d4; margin-bottom: 4px; }
+  .param-row label span { color: #e8f0ff; font-weight: 600; font-size: 13px; }
+  .param-row input[type=range] { width: 100%; accent-color: #4f8ef7; }
+  .param-row .sub { font-size: 10px; color: #556080; margin-top: 2px; }
+
+  .metrics { background: #16213e; border: 1px solid #2d3f6e; border-radius: 10px; padding: 14px 16px; flex: 1; min-width: 200px; }
+  .metrics h2 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #6a8fc8; margin-bottom: 12px; }
+  .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .metric-card { background: #0f1a33; border-radius: 8px; padding: 10px 12px; }
+  .metric-card .val { font-size: 20px; font-weight: 700; color: #a0c4ff; }
+  .metric-card .lbl { font-size: 10px; color: #556080; margin-top: 2px; }
+
+  .phase-bar { background: #16213e; border: 1px solid #2d3f6e; border-radius: 10px; padding: 10px 16px; margin-bottom: 16px; }
+  .phase-bar h2 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #6a8fc8; margin-bottom: 8px; }
+  .bar-wrap { display: flex; height: 28px; border-radius: 6px; overflow: hidden; font-size: 11px; }
+  .bar-seg { display: flex; align-items: center; justify-content: center; font-weight: 600; transition: flex 0.3s; }
+
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .chart-card { background: #16213e; border: 1px solid #2d3f6e; border-radius: 10px; padding: 12px 14px; }
+  .chart-card h3 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #6a8fc8; margin-bottom: 8px; }
+
+  .warn { display: none; background: #2a1800; border: 1px solid #804000; border-radius: 8px; padding: 8px 12px; font-size: 12px; color: #ffaa44; margin-bottom: 12px; }
+  .derived { background: #0f1a33; border-radius: 8px; padding: 8px 12px; margin-top: 10px; font-size: 11px; color: #9bb3d4; line-height: 1.8; }
+  .derived span { color: #a0c4ff; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>LAB3 — Trapezoid Profile Simulator</h1>
+
+<div class="warn" id="warn">⚠ acct ≥ time/2 — no cruise phase. Reduce acct or increase time.</div>
+
+<div class="top">
+  <div class="params">
+    <h2>Parameters (p2p struct)</h2>
+
+    <div class="param-row">
+      <label>p2p.time — total duration <span id="lbl_time">2.40</span> s</label>
+      <input type="range" id="ptime" min="0.1" max="20" step="0.05" value="2.40">
+      <div class="sub">Total move duration</div>
+    </div>
+
+    <div class="param-row">
+      <label>p2p.acct — accel time <span id="lbl_acct">0.84</span> s</label>
+      <input type="range" id="acct" min="0.01" max="10" step="0.01" value="0.84">
+      <div class="sub">Ramp-up (= ramp-down) duration</div>
+    </div>
+
+    <div class="param-row">
+      <label>p2p.target — position <span id="lbl_target">360</span> °</label>
+      <input type="range" id="target" min="10" max="3600" step="10" value="360">
+      <div class="sub">Target position (CFG_POS_SETPOINT_DEG)</div>
+    </div>
+
+    <div class="derived" id="derived">
+      Derived: v_max = <span id="d_vmax">—</span> rad/s &nbsp;|&nbsp; a_max = <span id="d_amax">—</span> rad/s²
+    </div>
+  </div>
+
+  <div class="metrics">
+    <h2>Profile Summary</h2>
+    <div class="metric-grid">
+      <div class="metric-card"><div class="val" id="m_tacc">—</div><div class="lbl">t_accel [s]</div></div>
+      <div class="metric-card"><div class="val" id="m_tcruise">—</div><div class="lbl">t_cruise [s]</div></div>
+      <div class="metric-card"><div class="val" id="m_ttotal">—</div><div class="lbl">t_total [s]</div></div>
+      <div class="metric-card"><div class="val" id="m_vpeak">—</div><div class="lbl">v_max [rad/s]</div></div>
+      <div class="metric-card"><div class="val" id="m_amax">—</div><div class="lbl">a_max [rad/s²]</div></div>
+      <div class="metric-card"><div class="val" id="m_dcruise">—</div><div class="lbl">d_cruise [deg]</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="phase-bar">
+  <h2>Phase Timeline</h2>
+  <div class="bar-wrap">
+    <div class="bar-seg" id="seg_acc" style="background:#2255cc; color:#a0c4ff;"></div>
+    <div class="bar-seg" id="seg_crz" style="background:#1a6633; color:#7ee8a2;"></div>
+    <div class="bar-seg" id="seg_dec" style="background:#7a2020; color:#ffaaaa;"></div>
+  </div>
+</div>
+
+<div class="charts">
+  <div class="chart-card">
+    <h3>Velocity [rad/s]</h3>
+    <div style="position:relative; height:200px;"><canvas id="c_velo" role="img" aria-label="Trapezoidal velocity profile over time"></canvas></div>
+  </div>
+  <div class="chart-card">
+    <h3>Position [deg]</h3>
+    <div style="position:relative; height:200px;"><canvas id="c_pos" role="img" aria-label="Position over time"></canvas></div>
+  </div>
+  <div class="chart-card">
+    <h3>Acceleration [rad/s²]</h3>
+    <div style="position:relative; height:200px;"><canvas id="c_acc" role="img" aria-label="Acceleration profile over time"></canvas></div>
+  </div>
+  <div class="chart-card">
+    <h3>Phase diagram (v vs θ)</h3>
+    <div style="position:relative; height:200px;"><canvas id="c_phase" role="img" aria-label="Velocity vs position phase diagram"></canvas></div>
+  </div>
+</div>
+
+<script>
+const GRID = { color: 'rgba(255,255,255,0.07)' };
+const TICK = { color: '#556080', font: { size: 10 } };
+const chartOpts = (xl, yl) => ({
+  responsive: true, maintainAspectRatio: false, animation: false,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { grid: GRID, ticks: { ...TICK, maxTicksLimit: 8 }, title: { display: true, text: xl, color: '#556080', font: { size: 10 } } },
+    y: { grid: GRID, ticks: { ...TICK, maxTicksLimit: 6 }, title: { display: true, text: yl, color: '#556080', font: { size: 10 } } }
+  }
+});
+
+const DT = 0.001;
+
+// Build trapezoidal profile from p2p.time, p2p.acct, target [deg]
+function buildProfile(p2p_time, p2p_acct, target_deg) {
+  const target_rad = target_deg * Math.PI / 180;
+
+  // Clamp acct so cruise time >= 0
+  const acct = Math.min(p2p_acct, p2p_time / 2 - 0.001);
+  const t_cruise = p2p_time - 2 * acct;
+  const is_warn  = p2p_acct >= p2p_time / 2;
+
+  // Derived kinematics
+  // target = v_max * (p2p_time - acct)  => v_max = target / (time - acct)
+  const v_max = target_rad / (p2p_time - acct);
+  const a_max = v_max / acct;
+
+  const t1 = acct;
+  const t2 = acct + t_cruise;
+  const t3 = p2p_time;
+
+  const d_acc    = 0.5 * v_max * acct;
+  const d_cruise = v_max * t_cruise;
+
+  const ts = [], vs = [], ps = [], as_ = [];
+  for (let t = 0; t <= t3 + DT * 0.5; t += DT) {
+    ts.push(+t.toFixed(4));
+    let v, p, a;
+    if (t <= t1) {
+      v = a_max * t;
+      p = 0.5 * a_max * t * t;
+      a = a_max;
+    } else if (t <= t2) {
+      const dt = t - t1;
+      v = v_max;
+      p = d_acc + v_max * dt;
+      a = 0;
+    } else {
+      const td = t - t2;
+      v = Math.max(0, v_max - a_max * td);
+      p = Math.min(target_rad, d_acc + d_cruise + v_max * td - 0.5 * a_max * td * td);
+      a = -a_max;
+    }
+    vs.push(+v.toFixed(5));
+    ps.push(+(p * 180 / Math.PI).toFixed(4));
+    as_.push(+a.toFixed(3));
+  }
+
+  return { ts, vs, ps, as_, t_acc: acct, t_cruise, t_total: p2p_time,
+           v_max, a_max, d_acc, d_cruise, target_deg, is_warn };
+}
+
+function colorPoints(ts, t1, t2) {
+  return ts.map(t => t <= t1 ? '#4f8ef7' : t <= t2 ? '#3dbb6a' : '#e05050');
+}
+
+const mkData = (ts, ys, colors) => ({
+  labels: ts,
+  datasets: [{
+    data: ys.map((y, i) => ({ x: ts[i], y })),
+    borderColor: colors, pointRadius: 0, borderWidth: 1.8, tension: 0, fill: false,
+    segment: { borderColor: ctx => colors[ctx.p0DataIndex] }
+  }]
+});
+
+const mkPhaseData = (ps_rad, vs, ts, t1, t2) => ({
+  datasets: [
+    { label: 'Accel',  data: ps_rad.map((p,i) => ts[i] <= t1             ? {x: p*180/Math.PI, y:vs[i]} : null).filter(Boolean), borderColor:'#4f8ef7', pointRadius:0, borderWidth:2, showLine:true },
+    { label: 'Cruise', data: ps_rad.map((p,i) => ts[i]>t1 && ts[i]<=t2   ? {x: p*180/Math.PI, y:vs[i]} : null).filter(Boolean), borderColor:'#3dbb6a', pointRadius:0, borderWidth:2, showLine:true },
+    { label: 'Decel',  data: ps_rad.map((p,i) => ts[i] > t2              ? {x: p*180/Math.PI, y:vs[i]} : null).filter(Boolean), borderColor:'#e05050', pointRadius:0, borderWidth:2, showLine:true }
+  ]
+});
+
+let prof = buildProfile(2.40, 0.84, 360);
+
+const cVelo  = new Chart(document.getElementById('c_velo'),  { type:'line', data: mkData(prof.ts, prof.vs,  colorPoints(prof.ts, prof.t_acc, prof.t_acc+prof.t_cruise)), options: chartOpts('Time [s]','rad/s') });
+const cPos   = new Chart(document.getElementById('c_pos'),   { type:'line', data: mkData(prof.ts, prof.ps,  colorPoints(prof.ts, prof.t_acc, prof.t_acc+prof.t_cruise)), options: chartOpts('Time [s]','deg') });
+const cAcc   = new Chart(document.getElementById('c_acc'),   { type:'line', data: mkData(prof.ts, prof.as_, colorPoints(prof.ts, prof.t_acc, prof.t_acc+prof.t_cruise)), options: chartOpts('Time [s]','rad/s²') });
+const cPhase = new Chart(document.getElementById('c_phase'), {
+  type:'scatter',
+  data: mkPhaseData(prof.ts.map((_,i)=>prof.ps[i]*Math.PI/180), prof.vs, prof.ts, prof.t_acc, prof.t_acc+prof.t_cruise),
+  options: {
+    responsive:true, maintainAspectRatio:false, animation:false,
+    plugins:{ legend:{ display:true, labels:{ color:'#9bb3d4', font:{size:10}, boxWidth:10 }}},
+    scales:{
+      x:{ grid:GRID, ticks:TICK, title:{display:true, text:'Position [deg]', color:'#556080', font:{size:10}} },
+      y:{ grid:GRID, ticks:TICK, title:{display:true, text:'Velocity [rad/s]', color:'#556080', font:{size:10}} }
+    }
+  }
+});
+
+function updateMetrics(p) {
+  document.getElementById('m_tacc').textContent    = p.t_acc.toFixed(3);
+  document.getElementById('m_tcruise').textContent = p.t_cruise.toFixed(3);
+  document.getElementById('m_ttotal').textContent  = p.t_total.toFixed(3);
+  document.getElementById('m_vpeak').textContent   = p.v_max.toFixed(3);
+  document.getElementById('m_amax').textContent    = p.a_max.toFixed(3);
+  document.getElementById('m_dcruise').textContent = (p.d_cruise * 180 / Math.PI).toFixed(2);
+  document.getElementById('d_vmax').textContent    = p.v_max.toFixed(3);
+  document.getElementById('d_amax').textContent    = p.a_max.toFixed(3);
+
+  const tot = p.t_total || 1;
+  document.getElementById('seg_acc').style.flex = p.t_acc / tot;
+  document.getElementById('seg_crz').style.flex = p.t_cruise / tot;
+  document.getElementById('seg_dec').style.flex = p.t_acc / tot;
+  document.getElementById('seg_acc').textContent = p.t_acc.toFixed(2) + 's';
+  document.getElementById('seg_crz').textContent = p.t_cruise > 0.05 ? p.t_cruise.toFixed(2) + 's' : '';
+  document.getElementById('seg_dec').textContent = p.t_acc.toFixed(2) + 's';
+
+  document.getElementById('warn').style.display = p.is_warn ? 'block' : 'none';
+}
+
+function update() {
+  const ptime  = +document.getElementById('ptime').value;
+  const pacct  = +document.getElementById('acct').value;
+  const target = +document.getElementById('target').value;
+
+  document.getElementById('lbl_time').textContent   = ptime.toFixed(2);
+  document.getElementById('lbl_acct').textContent   = pacct.toFixed(2);
+  document.getElementById('lbl_target').textContent = target;
+
+  const p    = buildProfile(ptime, pacct, target);
+  const cols = colorPoints(p.ts, p.t_acc, p.t_acc + p.t_cruise);
+
+  cVelo.data  = mkData(p.ts, p.vs,  cols);
+  cPos.data   = mkData(p.ts, p.ps,  cols);
+  cAcc.data   = mkData(p.ts, p.as_, cols);
+
+  const pd = p.ts.map((_,i) => p.ps[i] * Math.PI / 180);
+  cPhase.data = mkPhaseData(pd, p.vs, p.ts, p.t_acc, p.t_acc + p.t_cruise);
+
+  cVelo.update(); cPos.update(); cAcc.update(); cPhase.update();
+  updateMetrics(p);
+}
+
+['ptime','acct','target'].forEach(id => document.getElementById(id).addEventListener('input', update));
+update();
+</script>
+</body>
+</html>

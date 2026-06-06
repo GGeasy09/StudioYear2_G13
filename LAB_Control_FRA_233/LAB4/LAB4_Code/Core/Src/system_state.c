@@ -13,7 +13,11 @@
 #define PWM_PERIOD              42500           /* TIM1 ARR value          */
 #define VOLTAGE_MAX             12.0f           /* Motor supply rail (V)   */
 #define Encoderhome             30000
-#define Encoderlimit            16384        
+#define Encoderlimit            16384
+
+/* Signed voltage actually applied by PWM() (control + friction, post-clamp/floor).
+ * Read by the Kalman step as the true motor input u. */
+float32_t vout_applied = 0.0f;
 /* Direction pin: HIGH = forward, LOW = reverse */
 #define DIR_PORT   GPIOC
 #define DIR_PIN    GPIO_PIN_3
@@ -34,6 +38,111 @@ void SYSTEM_STATE_Encoder_Init(TIM_HandleTypeDef *htim_clk, TIM_HandleTypeDef *h
     encoder->htim_encoder = htim_encoder;
 }
 
+/* =========================================================================
+ * SYSTEM_STATE_Init — one-shot init for the whole system_state subsystem
+ * ======================================================================= */
+void SYSTEM_STATE_Init(SYSTEM_STATE *state, Encoder *encoder, Proximity *prox,
+                       TIM_HandleTypeDef *htim_clk,
+                       TIM_HandleTypeDef *htim_encoder,
+                       TIM_HandleTypeDef *htim_pwm)
+{
+    /* 1. Start hardware timers and force the motor off */
+    HAL_TIM_Base_Start(htim_clk);
+    HAL_TIM_Encoder_Start(htim_encoder, TIM_CHANNEL_ALL);
+    HAL_TIM_PWM_Start(htim_pwm, TIM_CHANNEL_1);
+    PWM(0.0f, 0.0f);
+
+    /* 2. Encoder: bind handles, seed counter to home centre, clear tracking */
+    SYSTEM_STATE_Encoder_Init(htim_clk, htim_encoder, encoder);
+    __HAL_TIM_SET_COUNTER(htim_encoder, Encoderhome);
+    encoder->wrap_counter      = 0;
+    encoder->encoder_prev_data = 0.0f;   /* current_counts at home = Encoderhome - Encoderhome = 0 */
+
+    /* 3. Proximity / homing flags.
+     *    flag_ready = 0 -> not homed yet. The main loop then either runs the
+     *    active sweep (SYSTEM_STATE_HomingStep) or homes in place
+     *    (SYSTEM_STATE_SetHomeHere), depending on the home_here toggle. */
+    prox->flag_ready        = 0;
+    prox->state_detection   = 0;
+    prox->proximity_flag    = 0;
+    prox->reference_counter = Encoderhome;
+    prox->vout              = 0.0f;
+
+    /* 4. State-machine defaults */
+    state->cur_state      = STATE_WAITING_COMMAND;
+    state->cur_pos        = 0.0f;
+    state->cur_pos_degree = 0.0f;
+}
+
+/* =========================================================================
+ * SYSTEM_STATE_HomingStep — one homing iteration, called from the main loop
+ * ======================================================================= */
+uint8_t SYSTEM_STATE_HomingStep(Proximity *prox, Encoder *encoder,
+                                KALMAN_Multi_Model_Params *kalman,
+                                SYSTEM_STATE *state,
+                                TIM_HandleTypeDef *htim_isr)
+{
+    if (prox->flag_ready == 0)
+    {
+        /* Still homing: drive the sweep */
+        SYSTEM_STATE_Homing(prox);
+        PWM(prox->vout, 0.0f);
+        return 0;
+    }
+    else if (prox->flag_ready == 1)
+    {
+        /* Homing done: reset encoder counter to reference, seed Kalman, start ISR */
+        __HAL_TIM_SET_COUNTER(encoder->htim_encoder, prox->reference_counter);
+        encoder->wrap_counter      = 0;
+        encoder->encoder_prev_data = 0.0f;
+        SYSTEM_STATE_Encoder_Compute(encoder);
+
+        kalman->X[0] = encoder->encoder_rad;
+        kalman->X[1] = 0.0f;
+        kalman->X[2] = 0.0f;
+        kalman->X[3] = 0.0f;
+
+        state->cur_pos        = 0.0f;
+        state->cur_pos_degree = SYSTEM_STATE_convert_rad2degree(encoder->encoder_rad);
+
+        PWM(0.0f, 0.0f);
+        prox->flag_ready = 2;             /* latch: this block runs only once */
+        HAL_TIM_Base_Start_IT(htim_isr);  /* control ISR starts now */
+        return 1;
+    }
+
+    return 1;   /* flag_ready == 2: already homed */
+}
+
+/* =========================================================================
+ * SYSTEM_STATE_SetHomeHere — bypass sweep, zero at the current position
+ * ======================================================================= */
+void SYSTEM_STATE_SetHomeHere(Proximity *prox, Encoder *encoder,
+                              KALMAN_Multi_Model_Params *kalman,
+                              SYSTEM_STATE *state,
+                              TIM_HandleTypeDef *htim_isr)
+{
+    /* Force the encoder count to the home centre so the CURRENT physical angle
+     * reads as 0 rad / 0 deg, and that becomes the reference. */
+    __HAL_TIM_SET_COUNTER(encoder->htim_encoder, Encoderhome);
+    encoder->wrap_counter      = 0;
+    encoder->encoder_prev_data = 0.0f;
+    SYSTEM_STATE_Encoder_Compute(encoder);
+
+    kalman->X[0] = encoder->encoder_rad;   /* ~0 */
+    kalman->X[1] = 0.0f;
+    kalman->X[2] = 0.0f;
+    kalman->X[3] = 0.0f;
+
+    state->cur_pos        = 0.0f;
+    state->cur_pos_degree = 0.0f;
+
+    prox->reference_counter = Encoderhome;
+    prox->flag_ready        = 2;            /* latch: homed, run once */
+    PWM(0.0f, 0.0f);
+    HAL_TIM_Base_Start_IT(htim_isr);        /* control ISR starts now */
+}
+
 void SYSTEM_STATE_Encoder_Compute(Encoder *encoder)
 {
     // 1. Log current time from the dedicated clock timer
@@ -46,17 +155,24 @@ void SYSTEM_STATE_Encoder_Compute(Encoder *encoder)
     int32_t raw_counts = (int32_t)(int16_t)encoder->encoder_data;
     float32_t current_counts = (float32_t)(Encoderhome - raw_counts);    
     
-    // 3. Detect overflow/underflow by checking the jump since the last loop
+    // 3. Detect overflow/underflow + spike rejection (mutually exclusive branches)
     float32_t delta_counts = current_counts - encoder->encoder_prev_data;
-    
-    // If the jump is larger than half the 16-bit period, a hardware wrap occurred
-    if (delta_counts > 32767.0f) {
-        encoder->wrap_counter--;     // Wrapped backward (underflow)
-        delta_counts -= 65536.0f;    // Correct delta for velocity math
-    } 
-    else if (delta_counts < -32768.0f) {
-        encoder->wrap_counter++;     // Wrapped forward (overflow)
-        delta_counts += 65536.0f;    // Correct delta for velocity math
+
+    if (delta_counts > 32767.0f)
+    {
+        encoder->wrap_counter--;        // Real hardware wrap (forward → backward)
+        delta_counts -= 65536.0f;
+    }
+    else if (delta_counts < -32768.0f)
+    {
+        encoder->wrap_counter++;        // Real hardware wrap (backward → forward)
+        delta_counts += 65536.0f;
+    }
+    else if (delta_counts > 50.0f || delta_counts < -50.0f)
+    {
+        // Noise spike (50 < |delta| < 32767) — freeze position, leave wrap_counter untouched
+        current_counts = encoder->encoder_prev_data;
+        delta_counts   = 0.0f;
     }
     
     // 4. Calculate CONTINUOUS multi-turn counts
@@ -101,39 +217,38 @@ void SYSTEM_STATE_Encoder_Compute(Encoder *encoder)
 
 void PWM(float32_t voltage, float32_t direct_add)
 {
-    /* Voltage dead-band: when the controller is barely commanding anything,
-     * the sign of `voltage` flips with position noise. Adding the friction-comp
-     * offset (direct_add) in that flipping direction causes the motor to buzz /
-     * oscillate at the setpoint. Below this threshold, hold the motor OFF and
-     * skip the friction kick. Raise it if it still hunts, lower it if it stops
-     * short of target. */
-    const float32_t PWM_VOLTAGE_DEADBAND = 0.20f;   /* volts */
+    /* `direct_add` is now a SIGNED friction-comp voltage (already carries the
+     * correct direction and self-tapers to 0 near the setpoint). Combine it with
+     * the control voltage BEFORE the direction decision so the kick always lands
+     * the right way, then pick the GPIO direction from the resulting sign. */
+    voltage += direct_add;
 
     /* Clamp to rail limits */
     if      (voltage >  VOLTAGE_MAX) voltage =  VOLTAGE_MAX;
     else if (voltage < -VOLTAGE_MAX) voltage = -VOLTAGE_MAX;
 
+    /* Tiny floor: below this the combined command is essentially zero -> brake.
+     * The friction term already fades out near target, so this can be small and
+     * the motor no longer stops short of the setpoint. */
+    const float32_t PWM_VOLTAGE_FLOOR = 0.05f;   /* volts */
     float32_t vmag = (voltage < 0.0f) ? -voltage : voltage;
-    if (vmag < PWM_VOLTAGE_DEADBAND)
+    if (vmag < PWM_VOLTAGE_FLOOR)
     {
-        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);   /* motor off — no friction kick */
+        __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 0);   /* hold off */
+        vout_applied = 0.0f;   /* motor off -> 0 V actually applied */
         return;
     }
 
-    /* Direction */
+    /* Direction from the sign of the combined command */
     if (voltage >= 0.0f)
-    {
         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3, 0);
-    }
     else
-    {
         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_3, 1);
-        voltage = -voltage;   /* PWM compare value is always positive */
-    }
-        voltage += direct_add;
 
-    /* Scale voltage to timer counts: compare = period * |V| / V_max */
-    uint16_t compare = (uint16_t)(PWM_PERIOD * voltage / VOLTAGE_MAX);
+    vout_applied = voltage;   /* signed voltage actually applied (control + friction) */
+
+    /* Scale magnitude to timer counts: compare = period * |V| / V_max */
+    uint16_t compare = (uint16_t)(PWM_PERIOD * vmag / VOLTAGE_MAX);
 
     __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, compare);
 }

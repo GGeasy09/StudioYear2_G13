@@ -1,0 +1,7 @@
+../Core/Src/gripper_can.c:37:26:CAN_Transmit	2
+../Core/Src/gripper_can.c:67:6:Gripper_CAN_Init	1
+../Core/Src/gripper_can.c:104:6:Gripper_CAN_SendHeartbeat	1
+../Core/Src/gripper_can.c:111:6:Gripper_CAN_SendRelays	3
+../Core/Src/gripper_can.c:135:6:Gripper_CAN_RequestOptoRead	1
+../Core/Src/gripper_can.c:143:6:Gripper_CAN_ProcessRx	9
+../Core/Src/gripper_can.c:178:6:Gripper_CAN_Tick	3
