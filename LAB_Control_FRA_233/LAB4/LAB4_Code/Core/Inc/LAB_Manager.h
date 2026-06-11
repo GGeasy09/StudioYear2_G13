@@ -53,6 +53,10 @@ typedef struct {
     volatile float32_t  friction_static;
     volatile float32_t  friction_dynamic;
     volatile uint8_t    friction_en;
+    volatile float32_t  disturbance_scale;  /* runtime dist_FF multiplier (1.0 = full, 0.0 = off) */
+    /* LAB5 auto-sweep */
+    volatile uint8_t    lab5_active;        /* write 1 to start sweep, reads 0 when done          */
+    volatile uint8_t    lab5_all_done;      /* goes 1 when all 72×5 moves complete                */
 } LAB_Params;
 
 /* =========================================================================

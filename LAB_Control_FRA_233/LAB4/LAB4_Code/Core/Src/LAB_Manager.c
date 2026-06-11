@@ -25,15 +25,35 @@
  * ======================================================================= */
 #define UART_PKT_SIZE          90u       /* [0xFF] + 11×8 bytes + [0x0F]   */
 
-#define HOLD_POS_DEADZONE_DEG  0.12f     /* outer PID off + integral bleed  */
+#define HOLD_POS_DEADZONE_DEG  0.10f     /* outer PID off + integral bleed  */
 #define HOLD_INTEGRAL_DECAY    0.95f     /* bleed factor per tick           */
 
 #define RAMP_SLOPE  (0.5f / 2000.0f)    /* 0.5 V/s @ 2 kHz = 0.00025 V/tick */
 #define RAMP_MAX     9.0f
 
+#define LAB3_HOLD_MS   500U             /* hold position for this long after trajectory [ms] */
+#define LAB3_RESET_MS 2000U             /* auto-reset this long after trajectory ends   [ms] */
+
+/* ---- LAB5 sweep parameters -------------------------------------------- */
+#define LAB5_REPEATS      5             /* repetitions per target angle                     */
+#define LAB5_STEP_DEG     5.0f          /* step between targets [deg]                       */
+#define LAB5_N_TARGETS    72            /* 5° .. 360° → 72 targets                          */
+#define LAB5_BREAK_MS     2500U         /* idle pause after each move (PWM already off)     */
+
+typedef enum {
+    L5_IDLE = 0,
+    L5_WAIT_FWD,        /* forward move running — waiting for lab3_done      */
+    L5_BREAK_FWD,       /* 1 s idle after forward done, before return home   */
+    L5_WAIT_HOME,       /* return-to-home running — waiting for lab3_done    */
+    L5_BREAK_HOME,      /* 1 s idle after home done, before next forward     */
+    L5_DONE
+} LAB5_Phase_t;
+
 /* Friction thresholds */
-#define FRICTION_VELO_THRESH   0.01f    /* rad/s — tanh roll-off width     */
+#define FRICTION_VELO_THRESH   0.07f    /* rad/s — tanh roll-off width     */
 #define FRICTION_POS_THRESH    0.0087f  /* rad   (~0.5 deg)                */
+
+#define Disturbance_Scale      CFG_DISTURBANCE_SCALE
 
 /* =========================================================================
  * Hardware objects
@@ -91,6 +111,9 @@ LAB_Params lab = {
     .friction_static    = CFG_FRICTION_STATIC,
     .friction_dynamic   = CFG_FRICTION_DYNAMIC,
     .friction_en        = CFG_EN_FRICTION,
+    .disturbance_scale  = Disturbance_Scale,
+    .lab5_active        = 0,
+    .lab5_all_done      = 0
 };
 
 P2P_Cmd p2p = {
@@ -110,15 +133,31 @@ P2P_Cmd p2p = {
 volatile uint8_t   lab3_done          = 0;
          uint8_t   home_here          = 1;
 
+static volatile uint8_t    lab3_holding    = 0;    /* 1 = in 0.5 s post-traj hold window */
+static volatile uint32_t   lab3_hold_tick  = 0;    /* HAL_GetTick() when hold started     */
+static volatile uint32_t   lab3_reset_tick = 0;    /* HAL_GetTick() when trajectory ended */
+static volatile uint8_t    lab3_stepped    = 0;    /* 1 = target already incremented this move */
+
+/* LAB5 sequencer state */
+static LAB5_Phase_t        lab5_phase     = L5_IDLE;
+static uint8_t             lab5_step      = 0;   /* 0..71  → target = (step+1)*5°  */
+static uint8_t             lab5_repeat    = 0;   /* 0..4                            */
+static uint32_t            lab5_break_tick = 0;  /* HAL_GetTick() snapshot for break */
+/* lab.lab5_active / lab.lab5_all_done live in lab struct (accessible via Live Expression) */
+
 static volatile uint8_t    ramp_active = 0;
 static volatile uint8_t    ramp_up     = 1;
 static volatile float32_t  ramp_vout   = 0.0f;
 
 static float32_t  vout                = 0.0f;
+static float32_t  vin_kalman          = 0.0f;   /* PID + ref_FF only — fed to Kalman */
 static float32_t  friction_feedforward = 0.0f;
          float32_t  actual_error       = 0.0f;
 
 static uint8_t    uart_buf[UART_PKT_SIZE];
+
+/* Forward declarations (static helpers defined later in file) */
+static void LAB5_Process(void);
 
 /* =========================================================================
  * LAB_Init
@@ -157,6 +196,8 @@ static void LAB_HandleReset(void)
 {
     lab.reset           = 0;
     lab3_done           = 0;
+    lab3_holding        = 0;
+    lab3_stepped        = 0;
     p2p.trigger         = 0;
     sys_state.cur_state = STATE_WAITING_COMMAND;
     __HAL_TIM_SET_COUNTER(encoder.htim_encoder, 30000);
@@ -190,8 +231,10 @@ static void LAB_HandleReset(void)
  * ======================================================================= */
 static void LAB_HandleTrigger(void)
 {
-    p2p.trigger = 0;
-    lab3_done   = 0;
+    p2p.trigger  = 0;
+    lab3_done    = 0;
+    lab3_holding = 0;
+    lab3_stepped = 0;
 
     /* LAB4 — dead band ramp mode */
     if (lab.lab_select == 4)
@@ -241,6 +284,11 @@ void LAB_MainLoop(void)
     if (home_here && ref_pos.flag_ready != 2)
         SYSTEM_STATE_SetHomeHere(&ref_pos, &encoder, &Kalman, &sys_state, &htim20);
 
+    /* LAB5 sequencer — must run before trigger check so trigger set here
+       is caught by LAB_HandleTrigger in the same main-loop pass */
+    if (lab.lab_select == 5)
+        LAB5_Process();
+
     if (p2p.trigger)
         LAB_HandleTrigger();
 }
@@ -284,7 +332,7 @@ static void LAB_BuildTxPacket(void)
         break;
 
     case 3:   /* LAB3 — cascade */
-        fields[0]  = (double)Kalman.X[0];
+        fields[0]  = (double)(vout_applied * Kalman.X[3]);  /* power [W] — uses post-saturation voltage */
         fields[1]  = (double)Kalman.X[1];
         fields[2]  = (double)Kalman.X[2];
         fields[3]  = (double)friction_feedforward;
@@ -304,6 +352,20 @@ static void LAB_BuildTxPacket(void)
         fields[3]  = (double)ramp_active;
         break;
 
+    case 5:   /* LAB5 — auto sweep (same signals as LAB3 + sweep status) */
+        fields[0]  = (double)(vout_applied * Kalman.X[3]);  /* power [W] — post-saturation */
+        fields[1]  = (double)Kalman.X[1];
+        fields[2]  = (double)Kalman.X[2];
+        fields[3]  = (double)friction_feedforward;
+        fields[4]  = (double)ref.pos;
+        fields[5]  = (double)ref.velo;
+        fields[6]  = (double)vout;
+        fields[7]  = (double)encoder.encoder_rad;
+        fields[8]  = (double)Controller.feedforward->reference_value;
+        fields[9]  = (double)Controller.feedforward->disturbance_value;
+        fields[10] = (double)traj_mgr.state.Complete;
+        break;
+
     default:
         break;
     }
@@ -318,6 +380,9 @@ static void LAB_BuildTxPacket(void)
  * ======================================================================= */
 static void LAB1_Run(void)
 {
+    KALMAN_Multi_Model_Compute(&Kalman,         encoder.encoder_rad, lab.direct_voltage);
+    KALMAN_Multi_Model_Compute(&Kalman_NoInput, encoder.encoder_rad, 0.0f);
+
     vout = lab.direct_voltage;
     PWM(vout, 0.0f);
 }
@@ -327,6 +392,8 @@ static void LAB1_Run(void)
  * ======================================================================= */
 static void LAB2_Run(void)
 {
+    KALMAN_Multi_Model_Compute(&Kalman, encoder.encoder_rad, vin_kalman);
+
     CASCADE_Update(&Controller,
                    encoder.encoder_rad, Kalman.X[1],
                    Kalman.X[3], Kalman.X[2],
@@ -336,10 +403,20 @@ static void LAB2_Run(void)
     CASCADE_Ref_Compute(&Controller, lab.velo_setpoint);
     friction_feedforward = CASCADE_Friction_Compute(&friction, Kalman.X[1], 0.0f);
 
-    vout = lab.en_pid ? (CASCADE_Controller_Compute_Velocity(&Inner, lab.velo_setpoint, Kalman.X[1]), Inner.out) : 0.0f;
-
-    if (lab.en_disturbance_ff) vout += Controller.feedforward->disturbance_value;
-    if (lab.en_reference_ff)   vout += Controller.feedforward->reference_value;
+    if (lab.en_pid)
+    {
+        CASCADE_Controller_Compute_Velocity(&Inner, lab.velo_setpoint, Kalman.X[1]);
+        Inner.out = 0;
+        /* vin_kalman = PID + ref_FF only */
+        vin_kalman = Inner.out + (lab.en_reference_ff ? Controller.feedforward->reference_value : 0.0f);
+        /* dist_FF added to motor output only */
+        vout = vin_kalman + (lab.en_disturbance_ff ? Controller.feedforward->disturbance_value : 0.0f);
+    }
+    else
+    {
+        vin_kalman = 0.0f;
+        vout       = 0.0f;
+    }
 
     PWM(vout, lab.friction_en ? friction_feedforward : 0.0f);
 }
@@ -349,6 +426,8 @@ static void LAB2_Run(void)
  * ======================================================================= */
 static void LAB3_HoldPosition(void)
 {
+    KALMAN_Multi_Model_Compute(&Kalman, encoder.encoder_rad, vin_kalman);
+
     CASCADE_Update(&Controller,
                    encoder.encoder_rad, Kalman.X[1],
                    Kalman.X[3], Kalman.X[2],
@@ -358,31 +437,46 @@ static void LAB3_HoldPosition(void)
     {
         float32_t err_deg = fabsf((sys_state.cur_pos - Kalman.X[0]) * 57.295f);
 
-        if (err_deg > HOLD_POS_DEADZONE_DEG)
+        /* Outer PID — decimated every 4 ticks to match CASCADE_Compute rate */
+        Controller.loop_counter++;
+        if (Controller.loop_counter >= 4)
         {
-            CASCADE_Controller_Compute_Position(&Outer, sys_state.cur_pos, Kalman.X[0]);
+            Controller.loop_counter = 0;
+            if (err_deg > HOLD_POS_DEADZONE_DEG)
+            {
+                Outer.ki = lab.Ki_out;
+                CASCADE_Controller_Compute_Position(&Outer, sys_state.cur_pos, encoder.encoder_rad);
+            }
+            else
+            {
+                Outer.out = 0.0f;
+            }
         }
-        else
+        /* Integral bleed every tick */
+        if (err_deg <= HOLD_POS_DEADZONE_DEG)
         {
-            Outer.out      = 0.0f;
             Outer.integral *= HOLD_INTEGRAL_DECAY;
             Inner.integral *= HOLD_INTEGRAL_DECAY;
         }
 
         CASCADE_Controller_Compute_Velocity(&Inner, Outer.out, Kalman.X[1]);
-        CASCADE_Ref_Compute(&Controller, 0.0f);
+        CASCADE_Ref_Compute(&Controller, Outer.out);
         CASCADE_Disturbance_Compute(&Controller, Kalman.X[2]);
 
         /* Decay disturbance FF when settled — prevents limit cycle at rest */
-        if (fabsf((sys_state.cur_pos - Kalman.X[0]) * 57.295f) < 0.12f)
+        if (fabsf((sys_state.cur_pos - Kalman.X[0]) * 57.295f) < 0.1f)
         {
             Controller.feedforward->disturbance_value *= 0.9f;
             Controller.feedforward->dist_y_prev       *= 0.9f;
             Controller.feedforward->dist_u_prev       *= 0.9f;
         }
 
-        vout = Inner.out
-             + (lab.en_reference_ff   ? Controller.feedforward->reference_value   : 0.0f)
+        /* vin_kalman = PID + ref_FF (no dist_FF, no friction) */
+        vin_kalman = Inner.out
+                   + (lab.en_reference_ff ? Controller.feedforward->reference_value : 0.0f);
+        /* vout adds dist_FF on top — goes to PWM, not Kalman */
+        Controller.feedforward->disturbance_value *= lab.disturbance_scale; 
+        vout = vin_kalman
              + (lab.en_disturbance_ff ? Controller.feedforward->disturbance_value : 0.0f);
 
         if      (vout >  12.0f) vout =  12.0f;
@@ -392,15 +486,11 @@ static void LAB3_HoldPosition(void)
     {
         vout = 0.0f;
     }
-
+    friction.dynamic_ff = lab.friction_dynamic;
     friction_feedforward = CASCADE_Friction_Compute(
-        &friction, Kalman.X[1], sys_state.cur_pos - Kalman.X[0]);
+        &friction, Kalman.X[1], sys_state.cur_pos - encoder.encoder_rad);
 
-    float32_t hold_friction = friction_feedforward;
-    if (hold_friction >  0.3f) hold_friction =  0.3f;
-    if (hold_friction < -0.3f) hold_friction = -0.3f;
-
-    PWM(vout, lab.friction_en ? hold_friction : 0.0f);
+    PWM(vout, lab.friction_en ? friction_feedforward : 0.0f);
 }
 
 /* =========================================================================
@@ -408,8 +498,40 @@ static void LAB3_HoldPosition(void)
  * ======================================================================= */
 static void LAB3_Run(void)
 {
-    if (lab3_done) { LAB3_HoldPosition(); return; }
+    /* --- Permanently done: PWM cut, step target once after 2 s ---------- */
+    if (lab3_done)
+    {
+        PWM(0.0f, 0.0f); vout = 0.0f; vin_kalman = 0.0f;
+        if (!lab3_stepped && (HAL_GetTick() - lab3_reset_tick >= LAB3_RESET_MS))
+        {
+            p2p.target_deg += 5.0f;   /* advance to next hole — once only */
+            lab3_stepped    = 1;
+        }
+        return;
+    }
 
+    /* --- Post-trajectory hold window (0.5 s) ----------------------------- */
+    if (lab3_holding)
+    {
+        if (HAL_GetTick() - lab3_hold_tick >= LAB3_HOLD_MS)
+        {
+            /* Hold window expired -> cut PWM, signal done */
+            lab3_holding = 0;
+            lab3_done    = 1;
+            PWM(0.0f, 0.0f);
+            vout       = 0.0f;
+            vin_kalman = 0.0f;
+            return;
+        }
+        /* Still inside hold window -> run hold position controller */
+        LAB3_HoldPosition();
+        return;
+    }
+
+    /* --- Normal trajectory execution ------------------------------------- */
+    KALMAN_Multi_Model_Compute(&Kalman, encoder.encoder_rad, vin_kalman);
+
+    Outer.ki = lab.Ki_out;
     CASCADE_Update(&Controller,
                    encoder.encoder_rad, Kalman.X[1],
                    Kalman.X[3], Kalman.X[2],
@@ -421,9 +543,12 @@ static void LAB3_Run(void)
             ref = TrajManager_Step(&traj_mgr);
             if (traj_mgr.state.Complete && !traj_mgr.running)
             {
-                lab3_done                = 1;
+                /* Trajectory just finished -> start 0.5 s hold window */
                 sys_state.cur_pos        = traj_mgr.cur_pos_rad;
                 sys_state.cur_pos_degree = SYSTEM_STATE_convert_rad2degree(sys_state.cur_pos);
+                lab3_holding   = 1;
+                lab3_hold_tick = HAL_GetTick();
+                lab3_reset_tick = lab3_hold_tick;   /* 2 s auto-reset starts now */
                 PWM(0.0f, 0.0f);
                 vout = 0.0f;
                 return;
@@ -443,12 +568,137 @@ static void LAB3_Run(void)
 
     if (lab.en_pid)
         CASCADE_Compute(&Controller, ref.pos, ref.velo);
-
+    friction.dynamic_ff = lab.friction_dynamic;
     friction_feedforward = CASCADE_Friction_Compute(
         &friction, Kalman.X[1], ref.pos - Kalman.X[0]);
 
-    vout = lab.en_pid ? Controller.voltage_output : 0.0f;
+    if (lab.en_pid)
+    {
+        /* vin_kalman = inner PID + ref_FF only */
+        vin_kalman = Inner.out + Controller.feedforward->reference_value;
+        /* vout = vin_kalman + dist_FF (goes to motor, dist_FF bypasses Kalman) */
+        vout = vin_kalman
+             + (lab.en_disturbance_ff ? Controller.feedforward->disturbance_value : 0.0f);
+    }
+    else
+    {
+        vin_kalman = 0.0f;
+        vout       = 0.0f;
+    }
     PWM(vout, lab.friction_en ? friction_feedforward : 0.0f);
+}
+
+/* =========================================================================
+ * LAB5_Process  — auto P2P sweep sequencer (call from LAB_MainLoop)
+ *
+ *   Sequence per target angle T (deg):
+ *     1. Trigger move to T°            (ISR runs LAB3_Run)
+ *     2. Wait for lab3_done == 1       (trajectory + 0.5 s hold done)
+ *     3. Trigger return to 0°
+ *     4. Wait for lab3_done == 1
+ *     5. Reset encoder to exact 0      (eliminate cumulative error)
+ *     6. Advance repeat / step counter
+ *     7. Repeat LAB5_REPEATS times per target, then move to next target
+ * ======================================================================= */
+static void LAB5_Process(void)
+{
+    if (lab.lab_select != 5 || !lab.lab5_active) return;
+
+    switch (lab5_phase)
+    {
+    /* ---- First call after lab.lab5_active = 1 ----------------------------- */
+    case L5_IDLE:
+        lab5_step      = 0;
+        lab5_repeat    = 0;
+        lab.lab5_all_done  = 0;
+        /* Trigger first forward move */
+        p2p.target_deg = (float)(lab5_step + 1) * LAB5_STEP_DEG;
+        p2p.trigger    = 1;          /* LAB_HandleTrigger fires this iteration */
+        lab5_phase     = L5_WAIT_FWD;
+        break;
+
+    /* ---- Waiting for forward move (0° → target) to finish ------------- */
+    case L5_WAIT_FWD:
+        if (lab3_done)
+        {
+            /* Forward done — start 1 s break before return */
+            lab5_break_tick = HAL_GetTick();
+            lab5_phase      = L5_BREAK_FWD;
+        }
+        break;
+
+    /* ---- 1 s idle after forward move ---------------------------------- */
+    case L5_BREAK_FWD:
+        if (HAL_GetTick() - lab5_break_tick >= LAB5_BREAK_MS)
+        {
+            /* Break over — trigger return to home */
+            p2p.target_deg = 0.0f;
+            p2p.trigger    = 1;
+            lab5_phase     = L5_WAIT_HOME;
+        }
+        break;
+
+    /* ---- Waiting for return move (target → 0°) to finish -------------- */
+    case L5_WAIT_HOME:
+        if (lab3_done)
+        {
+            /* Return done — start 1 s break before next forward */
+            lab5_break_tick = HAL_GetTick();
+            lab5_phase      = L5_BREAK_HOME;
+        }
+        break;
+
+    /* ---- 1 s idle after home move ------------------------------------- */
+    case L5_BREAK_HOME:
+        if (HAL_GetTick() - lab5_break_tick >= LAB5_BREAK_MS)
+        {
+            /* Reset encoder to exact 0 — eliminate cumulative position error.
+             * Disable ISR first so encoder_prev_data and the counter are updated
+             * atomically — prevents the 2kHz ISR from seeing a stale prev_data
+             * against a freshly reset counter (which would compute a huge delta
+             * and potentially freeze the encoder reading). */
+            __disable_irq();
+            __HAL_TIM_SET_COUNTER(encoder.htim_encoder, 30000);
+            encoder.wrap_counter      = 0;
+            encoder.encoder_prev_data = 0.0f;
+            encoder.encoder_rad       = 0.0f;
+            encoder.encoder_degree    = 0.0f;
+            Kalman.X[0]              = 0.0f;
+            Kalman.X[1]              = 0.0f;
+            Kalman.X[2]              = 0.0f;
+            sys_state.cur_pos        = 0.0f;
+            sys_state.cur_pos_degree = 0.0f;
+            __enable_irq();
+
+            /* Advance repeat / target counters */
+            lab5_repeat++;
+            if (lab5_repeat >= LAB5_REPEATS)
+            {
+                lab5_repeat = 0;
+                lab5_step++;
+                if (lab5_step >= LAB5_N_TARGETS)
+                {
+                    lab5_phase        = L5_DONE;
+                    lab.lab5_active   = 0;
+                    lab.lab5_all_done = 1;
+                    break;
+                }
+            }
+
+            /* Trigger next forward move */
+            p2p.target_deg = (float)(lab5_step + 1) * LAB5_STEP_DEG;
+            p2p.trigger    = 1;
+            lab5_phase     = L5_WAIT_FWD;
+        }
+        break;
+
+    case L5_DONE:
+        /* Sequence complete — wait for MATLAB to detect lab.lab5_all_done */
+        break;
+
+    default:
+        break;
+    }
 }
 
 /* =========================================================================
@@ -456,6 +706,8 @@ static void LAB3_Run(void)
  * ======================================================================= */
 static void LAB4_Run(void)
 {
+    KALMAN_Multi_Model_Compute(&Kalman, encoder.encoder_rad, vin_kalman);
+
     if (!ramp_active) { PWM(0.0f, 0.0f); vout = 0.0f; return; }
 
     if (ramp_up)
@@ -488,24 +740,17 @@ void Robot_Period_Control_Loop(TIM_HandleTypeDef *htim)
     /* 1. Update encoder */
     SYSTEM_STATE_Encoder_Compute(&encoder);
 
-    /* 2. Kalman predict + update */
-    if (lab.lab_select == 1)
-    {
-        KALMAN_Multi_Model_Compute(&Kalman,          encoder.encoder_rad, lab.direct_voltage);
-        KALMAN_Multi_Model_Compute(&Kalman_NoInput,  encoder.encoder_rad, 0.0f);
-    }
-    else
-    {
-        KALMAN_Multi_Model_Compute(&Kalman, encoder.encoder_rad, vout);
-    }
-
-    /* 3. Per-lab control */
+    /* 2. Per-lab control — each function runs its own Kalman update first,
+     *    then computes control output and applies PWM.
+     *    vin_kalman carries the previous tick's PID+ref_FF voltage so the
+     *    observer model is always fed what was actually applied. */
     switch (lab.lab_select)
     {
         case 1:  LAB1_Run(); break;
         case 2:  LAB2_Run(); break;
         case 3:  LAB3_Run(); break;
         case 4:  LAB4_Run(); break;
+        case 5:  LAB3_Run(); break;   /* LAB5 reuses LAB3 trajectory + hold */
         default: PWM(0.0f, 0.0f); vout = 0.0f; break;
     }
 

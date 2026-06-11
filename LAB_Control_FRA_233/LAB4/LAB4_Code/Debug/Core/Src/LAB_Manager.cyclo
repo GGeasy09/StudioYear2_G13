@@ -1,0 +1,13 @@
+../Core/Src/LAB_Manager.c:165:6:LAB_Init	1
+../Core/Src/LAB_Manager.c:195:13:LAB_HandleReset	1
+../Core/Src/LAB_Manager.c:232:13:LAB_HandleTrigger	6
+../Core/Src/LAB_Manager.c:279:6:LAB_MainLoop	6
+../Core/Src/LAB_Manager.c:299:13:LAB_BuildTxPacket	6
+../Core/Src/LAB_Manager.c:381:13:LAB1_Run	1
+../Core/Src/LAB_Manager.c:393:13:LAB2_Run	5
+../Core/Src/LAB_Manager.c:427:13:LAB3_HoldPosition	11
+../Core/Src/LAB_Manager.c:499:13:LAB3_Run	13
+../Core/Src/LAB_Manager.c:603:13:LAB5_Process	14
+../Core/Src/LAB_Manager.c:707:13:LAB4_Run	5
+../Core/Src/LAB_Manager.c:736:6:Robot_Period_Control_Loop	7
+../Core/Src/LAB_Manager.c:768:6:HAL_GPIO_EXTI_Callback	2

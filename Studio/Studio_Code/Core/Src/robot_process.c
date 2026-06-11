@@ -130,38 +130,36 @@ static void Robot_State_Waiting(void)
         /* ---- Mode 0: direct gripper control ---- */
         if (robot_joy.mode == 0)
         {
-            /* Black  — toggle grip open/close */
-            if (robot_joy.raw_btn_black  == 0 && joy_prev.black  == 1)
-                Gripper_SetOpen(&robot_gripper, robot_gripper.grip_open ? 0 : 1);
+            /* Black  — handled globally (reset integrals, see Robot_HandleBlackReset) */
 
-            /* Blue   — toggle up / down */
+            /* Blue   — go to basesystem home position */
             if (robot_joy.raw_btn_blue   == 0 && joy_prev.blue   == 1)
-                Gripper_SetUp(&robot_gripper, robot_gripper.grip_up ? 0 : 1);
-
-            /* Yellow — Reset (also used to recover from emergency — handled below) */
-            if (robot_joy.raw_btn_yellow == 0 && joy_prev.yellow == 1)
             {
-                /* In normal operation: reset controller integrals */
-                Inner.integral   = 0.0f;
-                Outer.integral   = 0.0f;
-                Kalman.X[2]      = 0.0f;   /* clear disturbance estimate */
-                sys_state.cur_pos = encoder.encoder_rad;
+                float32_t tgt = SYSTEM_STATE_convert_rad2degree(sys_state.basesystem_home_pos);
+                TRAJ_Plan(PROFILE_SCURVE, tgt, TRAJ_VMAX, TRAJ_AMAX, TRAJ_JMAX);
+                sys_state.cur_state = STATE_RUNNING;
             }
 
-            /* Red    — (unassigned) */
+            /* Yellow — toggle grip open/close */
+            if (robot_joy.raw_btn_yellow == 0 && joy_prev.yellow == 1)
+                Gripper_SetOpen(&robot_gripper, robot_gripper.grip_open ? 0 : 1);
+
+            /* Red    — toggle gripper up / down */
+            if (robot_joy.raw_btn_red    == 0 && joy_prev.red    == 1)
+                Gripper_SetUp(&robot_gripper, robot_gripper.grip_up ? 0 : 1);
         }
 
         /* ---- Mode 1: home / pick / place ---- */
         if (robot_joy.mode == 1)
         {
-            /* Black — set home to current position */
+            /* Black — set basesystem home to current position */
             if (robot_joy.raw_btn_black == 0 && joy_prev.black == 1)
-                sys_state.home_pos = sys_state.cur_pos;
+                sys_state.basesystem_home_pos = encoder.encoder_rad;
 
-            /* Blue — go to home position */
+            /* Blue — go to basesystem home position */
             if (robot_joy.raw_btn_blue == 0 && joy_prev.blue == 1)
             {
-                float32_t tgt = SYSTEM_STATE_convert_rad2degree(sys_state.home_pos);
+                float32_t tgt = SYSTEM_STATE_convert_rad2degree(sys_state.basesystem_home_pos);
                 TRAJ_Plan(PROFILE_SCURVE, tgt, TRAJ_VMAX, TRAJ_AMAX, TRAJ_JMAX);
                 sys_state.cur_state = STATE_RUNNING;
             }
@@ -188,31 +186,26 @@ static void Robot_State_Waiting(void)
         /* edge-detection history updated below, outside state machine */
     }
 
-    /* BaseSystem mode commands */
-    if (sys_state.trust == Trust_Basesystem)
+    /* BaseSystem mode commands — run regardless of trust mode (PB0).
+     * Commands are only acted on when a flag is actually set, so joystick
+     * operation is unaffected when the BaseSystem is idle. */
+    if (BaseCmd.Target_Mode == CMD_MODE_JOG)
     {
-        /* HOME is handled at top level — no action needed here */
-        if (BaseCmd.Target_Mode == CMD_MODE_JOG)
-        {
-            PilotRamp_SetAuto(&robot_ramp, 1);   /* Manual ON */
-            if (BaseCmd.flag_jog_execute == 1)
-            {
-                /* Don't clear flag here — STATE_RUNNING clears it after executing */
-                sys_state.cur_state = STATE_RUNNING;
-            }
-        }
-        else if (BaseCmd.Target_Mode == CMD_MODE_AUTO)
-        {
-            PilotRamp_SetAuto(&robot_ramp, 0);   /* Auto ON */
-            if (BaseCmd.flag_p2p_execute == 1 || BaseCmd.flag_seq_execute == 1)
-                sys_state.cur_state = STATE_RUNNING;
-        }
-        else if (BaseCmd.Target_Mode == CMD_MODE_TEST)
-        {
-            PilotRamp_SetAuto(&robot_ramp, 1);   /* Manual ON */
-            if (BaseCmd.flag_test_execute == 1)
-                sys_state.cur_state = STATE_RUNNING;
-        }
+        PilotRamp_SetAuto(&robot_ramp, 1);   /* Manual ON */
+        if (BaseCmd.flag_jog_execute == 1)
+            sys_state.cur_state = STATE_RUNNING;
+    }
+    else if (BaseCmd.Target_Mode == CMD_MODE_AUTO)
+    {
+        PilotRamp_SetAuto(&robot_ramp, 0);   /* Auto ON */
+        if (BaseCmd.flag_p2p_execute == 1 || BaseCmd.flag_seq_execute == 1)
+            sys_state.cur_state = STATE_RUNNING;
+    }
+    else if (BaseCmd.Target_Mode == CMD_MODE_TEST)
+    {
+        PilotRamp_SetAuto(&robot_ramp, 1);   /* Manual ON */
+        if (BaseCmd.flag_test_execute == 1)
+            sys_state.cur_state = STATE_RUNNING;
     }
 }
 
@@ -250,7 +243,7 @@ static void Robot_Running_Sequence(void)
             {
                 seq.settle_ok_start = 0;   /* reset continuous-ok timer */
             }
-            if (HAL_GetTick() - seq.settle_phase_start >= 3000)
+            if (HAL_GetTick() - seq.settle_phase_start >= 1000)
                 seq.phase = 2;
             break;
         }
@@ -306,7 +299,7 @@ static void Robot_Running_Sequence(void)
             {
                 seq.settle_ok_start = 0;
             }
-            if (HAL_GetTick() - seq.settle_phase_start >= 3000)
+            if (HAL_GetTick() - seq.settle_phase_start >= 1000)
                 seq.phase = 5;
             break;
         }
@@ -337,7 +330,7 @@ static void Robot_Running_Sequence(void)
                 if ((uint16_t)seq.step >= BaseCmd.PickPlace_Pairs)
                 {
                     seq.active = 0;
-                    float32_t tgt = SYSTEM_STATE_convert_rad2degree(sys_state.home_pos);
+                    float32_t tgt = SYSTEM_STATE_convert_rad2degree(sys_state.basesystem_home_pos);
                     TRAJ_Plan(PROFILE_SCURVE, tgt, TRAJ_VMAX, TRAJ_AMAX, TRAJ_JMAX);
                 }
                 else
@@ -356,7 +349,7 @@ static void Robot_Running_Sequence(void)
 /* ---- STATE_RUNNING helper: BaseSystem command dispatch (JOG/P2P/SEQ/TEST) ---- */
 static void Robot_Running_BaseSystem(void)
 {
-    if (sys_state.trust != Trust_Basesystem) return;
+    /* Runs regardless of trust mode — BaseSystem commands always dispatched */
 
     /* Lamp reflects active mode: Auto=0, Manual=1 */
     if (BaseCmd.Target_Mode == CMD_MODE_AUTO || BaseCmd.Target_Mode == CMD_MODE_HOME)
@@ -630,9 +623,10 @@ static void Robot_UpdateTrustMode(void)
 }
 
 /* ---- BaseSystem HOME intercept. Returns 1 if it preempted this tick. ---- */
+/* Runs regardless of trust mode — HOME from BaseSystem always executes. */
 static uint8_t Robot_HandleHomeIntercept(void)
 {
-    if (sys_state.trust == Trust_Basesystem && BaseCmd.Target_Mode == CMD_MODE_HOME)
+    if (BaseCmd.Target_Mode == CMD_MODE_HOME)
     {
         /* Cancel everything */
         traj_mgr.running = 0;
@@ -642,7 +636,7 @@ static uint8_t Robot_HandleHomeIntercept(void)
         /* Sync cur_pos so the ISR holds cleanly for one tick */
         sys_state.cur_pos = Kalman.X[0];
 
-        float32_t tgt = SYSTEM_STATE_convert_rad2degree(sys_state.home_pos);
+        float32_t tgt = SYSTEM_STATE_convert_rad2degree(sys_state.basesystem_home_pos);
         TRAJ_Plan(PROFILE_SCURVE, tgt, TRAJ_VMAX, TRAJ_AMAX, TRAJ_JMAX);
         BaseCmd.Target_Mode  = CMD_MODE_IDLE;
         PilotRamp_SetAuto(&robot_ramp, 0);   /* Auto ON */
@@ -738,6 +732,18 @@ static void Robot_HandleColorHold(void)
     }
 }
 
+/* ---- Mode 0 Black: reset integrals + disturbance — runs in every state ---- */
+static void Robot_HandleBlackReset(void)
+{
+    if (robot_joy.mode != 0) return;
+    if (!(robot_joy.raw_btn_black == 0 && joy_prev.black == 1)) return;
+
+    Inner.integral    = 0.0f;
+    Outer.integral    = 0.0f;
+    Kalman.X[2]       = 0.0f;
+    sys_state.cur_pos = encoder.encoder_rad;
+}
+
 /* =========================================================================
  * Robot_State_Process — runs in main loop (non-real-time)
  * ========================================================================= */
@@ -754,6 +760,7 @@ void Robot_State_Process(void)
 
     Robot_HandleGripper();                 /* manual + seq + pick/place + SET_HOME */
     Robot_HandleColorHold();               /* 2s color hold → reference */
+    Robot_HandleBlackReset();              /* mode 0 Black: reset integrals (all states) */
 
     switch (sys_state.cur_state)
     {
@@ -778,22 +785,13 @@ void Robot_State_Process(void)
 
             /* ---- Sequence step-advance (runs regardless of trust mode) ---- */
             Robot_Running_Sequence();
-            /* ---- Auto-return to WAITING after move completes (Basesystem) ---- */
-            if (sys_state.trust == Trust_Basesystem
-                && traj_mgr.state.Complete == 1
+            /* ---- Auto-return to WAITING once everything is done ---- */
+            if (traj_mgr.state.Complete == 1
                 && !traj_mgr.running
                 && !seq.active
                 && !test.active)
             {
                 PilotLamp_SetWhite(0);
-                sys_state.cur_state = STATE_WAITING_COMMAND;
-            }
-
-            /* ---- Joystick: auto-return to WAITING when move completes ---- */
-            if (sys_state.trust == Trust_Joystick
-                && traj_mgr.state.Complete == 1 && !traj_mgr.running
-                && !seq.active)
-            {
                 sys_state.cur_state = STATE_WAITING_COMMAND;
             }
 

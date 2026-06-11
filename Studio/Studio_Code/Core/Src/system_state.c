@@ -196,7 +196,7 @@ void SYSTEM_STATE_Homing(Proximity *prox)
         case 2: // Using an explicit case 2 is safer than 'default'
             // Calculate center
             prox->diff_detect = (prox->first_detect - prox->second_detect)/2;
-            prox->reference_counter = Encoderhome - prox->diff_detect - 20;
+            prox->reference_counter = Encoderhome - prox->diff_detect - 10;
             prox->flag_ready = 1;
             __HAL_TIM_SET_COUNTER(&htim3,prox->reference_counter);
             prox->vout = 0.0;

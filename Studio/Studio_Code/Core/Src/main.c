@@ -47,49 +47,27 @@
 
 #define DEBUG_MODE 0   /* 0 = normal, 1 = trajectory-tuning: P2P auto-fires gripper on arrival */
 
-//Inner Loop ---------
-#define Kp_inner 1.02259f
-#define Ki_inner 10.2259f
+//Inner Loop ---------  (synced from LAB3 lab_config.h)
+#define Kp_inner 10.0f
+#define Ki_inner 25.0f
 #define Kd_inner 0.0f
-//Outer Loop ---------
-#define Kp_outer 2.0f
-#define Ki_outer 0.2f
-#define Kd_outer 0.5f
+//Outer Loop ---------  (synced from LAB3 lab_config.h)
+#define Kp_outer 3.5f
+#define Ki_outer 2.0f
+#define Kd_outer 0.0f
 
 /* ---- Robot geometry / sequencing constants ---- */
-#define DEG_PER_HOLE        5.0f    /* one hole = 5 degrees                 */
 #define HOLE_COUNT          72      /* 360 / 5 = 72 holes around the disc   */
 #define GRIPPER_TIMEOUT_MS  5000U   /* max wait for a gripper pick/place    */
 
 /* ---- Default trajectory timing (seconds) ---- */
 
-/* ---- Trajectory profile IDs (traj_profile) ---- */
-#define PROFILE_MINJERK     0
-#define PROFILE_MINJERK_VLIM 1
-#define PROFILE_TRAPEZOID   2
-#define PROFILE_SCURVE      3
+/* Trajectory profile IDs, P2P_TUNE_*, and TRAJ_* defines live in robot_process.h */
 
-/* ---- DEBUG_MODE 1 P2P tuning knobs — edit these and reflash ----
- * Profile used for the point-to-point move while tuning:
- *   PROFILE_MINJERK  -> auto-timed (uses P2P_TUNE_TIME below)
- *   PROFILE_SCURVE   -> uses P2P_TUNE_VMAX / P2P_TUNE_AMAX / P2P_TUNE_JMAX
- *   PROFILE_TRAPEZOID-> uses P2P_TUNE_TIME (total) / P2P_TUNE_ACCT (accel time) */
-#define P2P_TUNE_PROFILE    PROFILE_SCURVE
-#define P2P_TUNE_VMAX       4.0f    /* rad/s   (S-curve)            */
-#define P2P_TUNE_AMAX       4.0f    /* rad/s^2 (S-curve)            */
-#define P2P_TUNE_JMAX       2.0f   /* rad/s^3 (S-curve jerk)       */
-#define P2P_TUNE_TIME       1.5f    /* s       (min-jerk / trapz.) */
-#define P2P_TUNE_ACCT       0.3f    /* s       (trapezoid accel)   */
-
-/* ---- Universal trajectory parameters (all modes except performance test) ---- */
-#define TRAJ_VMAX  4.0f    /* rad/s   */
-#define TRAJ_AMAX  4.0f    /* rad/s²  */
-#define TRAJ_JMAX  2.0f    /* rad/s³  */
-
-#define static_friction_ff   0.65f   /* was 0.71f */
-#define dynamic_friction_ff  0.45f   /* was 0.55f */
-#define friction_velo_thresh 0.01f   /* rad/s — tanh roll-off width for motion dir */
-#define friction_pos_thresh  0.0087f /* rad (~0.5 deg) — taper static kick to 0 inside this band */
+#define static_friction_ff   0.70f   /* synced from LAB3 CFG_FRICTION_STATIC  */
+#define dynamic_friction_ff  0.50f   /* synced from LAB3 CFG_FRICTION_DYNAMIC */
+#define friction_velo_thresh 0.08f   /* rad/s — synced from LAB3 FRICTION_VELO_THRESH */
+#define friction_pos_thresh  0.0087f /* rad (~0.5 deg) */
 
 /* USER CODE END PD */
 
@@ -150,13 +128,15 @@ MOTOR_PARAMS my_motor = {
    .L   = 0.0002893301219f,
    .tau      = 0.05f,    /* legacy (unused now that ref/dist are split) */
    .tau_ref  = 0.01f,    /* reference FF: small/fast -> low lag */
-   .tau_dist = 0.1f      /* disturbance FF: large/slow -> stable */
+   .tau_dist = 0.01f     /* disturbance FF: synced from LAB3 CFG_TAU_DIST */
 };
 float32_t f32_buffer[10];
 float32_t vout;
+float32_t hold_ki_outer = Ki_outer;     /* outer ki — writable via debugger to match lab.Ki_out  */
+float32_t vin_kalman  = 0.0f;   /* PID + ref_FF only — fed to Kalman, no dist_FF/friction */
 int moving;
-float32_t actual_vin = 0; //not to use any where for friction feedforward only
-float32_t friction_feedforward = 0;
+float32_t actual_vin = 0.0f;   /* pre-friction vin for reference logging */
+float32_t friction_feedforward = 0.0f;
 int prox;
 int reed1;
 int reed2;
@@ -189,7 +169,8 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+
+HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -244,7 +225,7 @@ int main(void)
   /* ====================================================================
    * 4. ACTIVATE ALGORITHM INITIALIZATIONS HERE
    * ==================================================================== */
-  KALMAN_Multi_Model_Init(&Kalman, 5.33e-9, 9e-9f, 3e-8f, &my_motor);
+  KALMAN_Multi_Model_Init(&Kalman, 5.33e-11f, 5.00e-12f, 3e-8f, &my_motor);
   CASCADE_Controller_Init(Kp_inner, Ki_inner, Kd_inner, &Inner, -10.5f, 10.5f, 0.0005f);
   CASCADE_Controller_Init(Kp_outer, Ki_outer, Kd_outer, &Outer, -4.0f, 4.0f, 0.002f);
   CASCADE_Cascade_Start(&Controller, &Inner, &Outer, &ff, &my_motor, &Kalman);
@@ -428,6 +409,87 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 /* USER CODE BEGIN 4 */
 
 /* =========================================================================
+ * Hold position constants
+ * ========================================================================= */
+#define HOLD_POS_DEADZONE_DEG   0.12f     /* outer PID killed, integrals bleed */
+#define HOLD_INTEGRAL_DECAY     0.95f     /* integral bleed factor per tick    */
+#define HOLD_DISTURBANCE_SCALE  1.0f      /* dist_FF runtime multiplier — tune live via debugger */
+
+/* =========================================================================
+ * Robot_HoldPosition — cascade hold at sys_state.cur_pos
+ *
+ * Called every tick while traj_mgr.running == 0.
+ * Writes vin_kalman, vout, friction_feedforward.
+ *
+ * Dead-zone logic:
+ *   |err| > 0.12°  outer position PID active
+ *   |err| ≤ 0.12°  outer PID = 0, integrals bleed ×0.95, dist_FF decays ×0.9
+ * ========================================================================= */
+static void Robot_HoldPosition(void)
+{
+    Controller.traj_running = 0;
+
+    float32_t err_deg = fabsf((sys_state.cur_pos - Kalman.X[0]) * 57.295f);
+
+    /* ---- Outer position PID — decimated to match CASCADE_Compute (every 4 ticks) ---- */
+    Controller.loop_counter++;
+    if (Controller.loop_counter >= 4)   /* 4 = OUTER_DECIMATE in cascade.c */
+    {
+        Controller.loop_counter = 0;
+        if (err_deg > HOLD_POS_DEADZONE_DEG)
+        {
+            Outer.ki = hold_ki_outer;
+            CASCADE_Controller_Compute_Position(&Outer, sys_state.cur_pos, encoder.encoder_rad);
+        }
+        else
+        {
+            Outer.out = 0.0f;
+        }
+    }
+    /* Integral bleed runs every tick regardless of decimation */
+    if (err_deg <= HOLD_POS_DEADZONE_DEG)
+    {
+        Outer.integral *= HOLD_INTEGRAL_DECAY;
+        Inner.integral *= HOLD_INTEGRAL_DECAY;
+    }
+
+    /* ---- Inner velocity PID (every tick) ---- */
+    CASCADE_Controller_Compute_Velocity(&Inner, Outer.out, Kalman.X[1]);
+
+    /* ---- Reference FF — fed with velocity command (Outer.out ≈ 0 at rest) ---- */
+    Controller.velo_setpoint = Outer.out;
+    CASCADE_Ref_Compute(&Controller);
+
+    /* ---- Disturbance FF — disturbance_state already set by CASCADE_Update ---- */
+    CASCADE_Disturbance_Compute(&Controller);
+
+    /* ---- Disturbance scale: decay Kalman X[2] and FF state when settled ---- */
+    if (err_deg < 0.1f)
+    {
+        Kalman.X[2] *= 0.9f;   /* same as CASCADE_Compute internal scale */
+        Controller.feedforward->disturbance_value *= 0.9f;
+        Controller.feedforward->dist_y_prev       *= 0.9f;
+        Controller.feedforward->dist_u_prev       *= 0.9f;
+    }
+
+    /* ---- Disturbance scale (tune HOLD_DISTURBANCE_SCALE or hold_ki_outer live) ---- */
+    Controller.feedforward->disturbance_value *= HOLD_DISTURBANCE_SCALE;
+
+    /* ---- Clamp dist_FF to ±5 V (same limit as CASCADE_Compute) ---- */
+    if      (Controller.feedforward->disturbance_value >  5.0f) Controller.feedforward->disturbance_value =  5.0f;
+    else if (Controller.feedforward->disturbance_value < -5.0f) Controller.feedforward->disturbance_value = -5.0f;
+
+    vin_kalman = Inner.out;
+    vout       = vin_kalman + Controller.feedforward->disturbance_value;
+    friction_feedforward = CASCADE_Friction_Compute(
+        &friction, Kalman.X[1], sys_state.cur_pos - encoder.encoder_rad);
+
+
+    if      (vout >  0.8f) {vout =  0.8f;vin_kalman = 0.8f;}
+        else if (vout < -0.8f) {vout =  -0.8f;vin_kalman = -0.8f;}
+}
+
+/* =========================================================================
  * Robot_Period_Control_Loop — TIM20 ISR, 2 kHz
  * ========================================================================= */
 void Robot_Period_Control_Loop(TIM_HandleTypeDef *htim)
@@ -437,40 +499,40 @@ void Robot_Period_Control_Loop(TIM_HandleTypeDef *htim)
     /* 1. Read encoder */
     SYSTEM_STATE_Encoder_Compute(&encoder);
 
-    /* 2. Kalman filter — use vout_applied (total voltage PWM actually applied last
-     *    tick, control + friction, post clamp/floor), not vout which omits friction. */
-    KALMAN_Multi_Model_Compute(&Kalman, encoder.encoder_rad, vout);
+    /* 2. Kalman — feed PID + ref_FF only (dist_FF and friction bypass observer) */
+    KALMAN_Multi_Model_Compute(&Kalman, encoder.encoder_rad, vin_kalman);
 
-    /* 3. Feed Kalman states + measurement into cascade struct */
+    /* 3. Sync Kalman states into cascade struct — pos_state = raw encoder (matches LAB3) */
     CASCADE_Update(&Controller,
-                   Kalman.X[0],            /* pos_state         */
-                   Kalman.X[1],            /* velocity_state    */
-                   Kalman.X[3],            /* current_state     */
-                   Kalman.X[2],            /* disturbance_state */
-                   encoder.encoder_rad);   /* actual_pos        */
-    /* 4. Trajectory reference */
-    Traj_State_t ref;
+                   encoder.encoder_rad,
+                   Kalman.X[1],
+                   Kalman.X[3],
+                   Kalman.X[2],
+                   encoder.encoder_rad);
+
     if (traj_mgr.running)
-        ref = TrajManager_Step(&traj_mgr);
+    {
+        /* ---- TRAJECTORY PHASE ---- */
+        Traj_State_t ref = TrajManager_Step(&traj_mgr);
+
+        Controller.traj_running = 1;
+        CASCADE_Compute(&Controller, ref.pos, ref.velo);
+
+        friction_feedforward = CASCADE_Friction_Compute(
+            &friction, Kalman.X[1], ref.pos - Kalman.X[0]);
+
+        vin_kalman = Inner.out + Controller.feedforward->reference_value;
+        vout       = vin_kalman + Controller.feedforward->disturbance_value;
+    }
     else
     {
-        ref.pos      = sys_state.cur_pos;
-        ref.velo     = 0.0f;
-        ref.accel    = 0.0f;
-        ref.Complete = 1;
+        /* ---- HOLD POSITION PHASE ---- */
+        Robot_HoldPosition();
     }
 
-    /* 5. Cascade control */
-    Controller.traj_running = traj_mgr.running;
-    CASCADE_Compute(&Controller, ref.pos, ref.velo);
+    moving     = friction.moving;
+    actual_vin = vin_kalman;
 
-    /* 6. Friction feedforward — now in the cascade library */
-    friction_feedforward = CASCADE_Friction_Compute(&friction, Kalman.X[1], ref.pos - Kalman.X[0]);
-    moving = friction.moving;
-    actual_vin = Controller.voltage_output;   /* pre-friction, for reference */
-    vout = Controller.voltage_output;
-
-    /* 7. Apply PWM */
     PWM(vout, friction_feedforward);
 }
 

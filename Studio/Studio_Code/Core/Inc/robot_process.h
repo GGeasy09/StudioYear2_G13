@@ -39,14 +39,14 @@
 #define PROFILE_TRAPEZOID    2
 #define PROFILE_SCURVE       3
 #define P2P_TUNE_PROFILE    PROFILE_SCURVE
-#define P2P_TUNE_VMAX       4.0f
-#define P2P_TUNE_AMAX       4.0f
+#define P2P_TUNE_VMAX       4.05f   /* rad/s   — synced from LAB3 */
+#define P2P_TUNE_AMAX       4.8f    /* rad/s²  — synced from LAB3 */
 #define P2P_TUNE_JMAX       2.0f
 #define P2P_TUNE_TIME       1.5f
 #define P2P_TUNE_ACCT       0.3f
-#define TRAJ_VMAX  4.0f
-#define TRAJ_AMAX  4.0f
-#define TRAJ_JMAX  2.0f
+#define TRAJ_VMAX  4.05f   /* rad/s   — synced from LAB3 */
+#define TRAJ_AMAX  4.8f    /* rad/s²  — synced from LAB3 */
+#define TRAJ_JMAX  3.5f
 
 /* ===== State structs (move these OUT of main.c) ===== */
 typedef struct {
@@ -90,6 +90,8 @@ extern uint8_t                    joy_picking;
 extern uint8_t                    joy_placing;
 extern uint8_t                    p2p_grip_pending;
 extern uint32_t                   color_hold_start;
+extern PID                        Inner;
+extern PID                        Outer;
 
 /* Note: BaseCmd, registerFrame, htim20, and the command/trust/state enums
  * already come from the included headers (BaseSystem.h, elec_cabient.h,

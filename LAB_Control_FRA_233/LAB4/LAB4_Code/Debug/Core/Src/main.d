@@ -31,13 +31,12 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
  ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal_uart_ex.h \
  ../Core/Inc/dma.h ../Core/Inc/main.h ../Core/Inc/fdcan.h \
  ../Core/Inc/usart.h ../Core/Inc/tim.h ../Core/Inc/gpio.h \
- ../Core/Inc/kalman.h \
+ ../Core/Inc/LAB_Manager.h \
  ../Middlewares/Third_Party/ARM_CMSIS/CMSIS/DSP/Include/arm_math.h \
- ../Drivers/CMSIS/Include/cmsis_compiler.h ../Core/Inc/motor_params.h \
- ../Core/Inc/trajectory.h ../Core/Inc/tim.h ../Core/Inc/cascade.h \
- ../Core/Inc/kalman.h ../Core/Inc/trajectory.h ../Core/Inc/system_state.h \
- ../Core/Inc/BaseSystem.h ../Core/Inc/cascade.h \
- ../Core/Inc/elec_cabient.h ../Core/Inc/gpio.h ../Core/Inc/lab_config.h
+ ../Drivers/CMSIS/Include/cmsis_compiler.h ../Core/Inc/cascade.h \
+ ../Core/Inc/motor_params.h ../Core/Inc/kalman.h ../Core/Inc/trajectory.h \
+ ../Core/Inc/tim.h ../Core/Inc/system_state.h ../Core/Inc/BaseSystem.h \
+ ../Core/Inc/elec_cabient.h ../Core/Inc/gpio.h
 ../Core/Inc/main.h:
 ../Drivers/STM32G4xx_HAL_Driver/Inc/stm32g4xx_hal.h:
 ../Core/Inc/stm32g4xx_hal_conf.h:
@@ -75,18 +74,15 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
 ../Core/Inc/usart.h:
 ../Core/Inc/tim.h:
 ../Core/Inc/gpio.h:
-../Core/Inc/kalman.h:
+../Core/Inc/LAB_Manager.h:
 ../Middlewares/Third_Party/ARM_CMSIS/CMSIS/DSP/Include/arm_math.h:
 ../Drivers/CMSIS/Include/cmsis_compiler.h:
-../Core/Inc/motor_params.h:
-../Core/Inc/trajectory.h:
-../Core/Inc/tim.h:
 ../Core/Inc/cascade.h:
+../Core/Inc/motor_params.h:
 ../Core/Inc/kalman.h:
 ../Core/Inc/trajectory.h:
+../Core/Inc/tim.h:
 ../Core/Inc/system_state.h:
 ../Core/Inc/BaseSystem.h:
-../Core/Inc/cascade.h:
 ../Core/Inc/elec_cabient.h:
 ../Core/Inc/gpio.h:
-../Core/Inc/lab_config.h:

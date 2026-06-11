@@ -29,8 +29,8 @@
 #define CFG_KI_IN               25.0f
 #define CFG_KD_IN               0.0f
 
-#define CFG_KP_OUT              1.0f
-#define CFG_KI_OUT              0.0f
+#define CFG_KP_OUT              3.0f
+#define CFG_KI_OUT              1.0f
 #define CFG_KD_OUT              0.0f
 
 /* ---- FEEDFORWARD TAUS ------------------------------------- */
@@ -62,12 +62,15 @@
 #define CFG_FRICTION_STATIC     0.71f
 #define CFG_FRICTION_DYNAMIC    0.50f
 
+/* ---- DISTURBANCE SCALE ------------------------------------ */
+#define CFG_DISTURBANCE_SCALE   1.0f
+
 /* ---- LAB3: Default p2p trajectory parameters -------------- */
 #define TRAJ_TEST_PROFILE     TRAJ_PROFILE_SCURVE
 #define TRAJ_TEST_TARGET_DEG  360.0f   /* target position    [deg]  */
 #define TRAJ_TEST_VMAX        4.05f    /* max velocity       [rad/s]  */
 #define TRAJ_TEST_AMAX        4.8f     /* max acceleration   [rad/s²] */
-#define TRAJ_TEST_JMAX        2.0f     /* max jerk           [rad/s³] */
+#define TRAJ_TEST_JMAX        3.5f     /* max jerk           [rad/s³] */
 #define TRAJ_TEST_TIME        1.5f     /* total duration     [s]      */
 #define TRAJ_TEST_ACCT        0.3f     /* accel time (trap)  [s]      */
 

@@ -118,10 +118,10 @@ void Gripper_CAN_SendRelays(const Gripper *g)
     else
         s_relay_mask |= RELAY_BIT_GRIPPER_DOWN;
 
-    if (g->grip_open == 1U)          /* grip_open=1 means CLOSE (see GPIO convention) */
-        s_relay_mask |= RELAY_BIT_GRIPPER_CLOSE;
-    else
+    if (g->grip_open == 1U)          /* grip_open=1 means OPEN */
         s_relay_mask |= RELAY_BIT_GRIPPER_OPEN;
+    else
+        s_relay_mask |= RELAY_BIT_GRIPPER_CLOSE;
 
     /* Write Relay command: [0x10][0x00][mask] */
     uint8_t payload[3] = {
